@@ -1,20 +1,19 @@
+import React from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import 'react-native-gesture-handler';
+import 'react-native-reanimated';
+
+import { I18nProvider } from './src/i18n/useI18n';
+import { GameProvider } from './src/contexts/GameContext';
+import AppNavigator from './src/navigation/AppNavigator';
 
 export default function App() {
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <I18nProvider>
+      <GameProvider>
+        <AppNavigator />
+        <StatusBar style="light" />
+      </GameProvider>
+    </I18nProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
