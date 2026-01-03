@@ -19,10 +19,10 @@ import { useTheme } from '../hooks/useTheme';
 import { useI18n } from '../i18n/useI18n';
 import { Language } from '../i18n/translations';
 import AppHeader from '../components/AppHeader';
-import { 
-  COLORS, 
-  SPACING, 
-  BORDER_RADIUS, 
+import {
+  COLORS,
+  SPACING,
+  BORDER_RADIUS,
   SHADOWS,
   createTextStyle,
   THEME_INFO,
@@ -71,6 +71,12 @@ const SettingsScreen: React.FC = () => {
     await setLanguage(selectedLanguage);
   };
 
+  const handleRemoveAdsPress = async () => {
+    await triggerHaptics('medium');
+    await playSound('button');
+    navigation.navigate('RemoveAds' as never);
+  };
+
   const settingsData = [
     {
       id: 'sound',
@@ -92,24 +98,32 @@ const SettingsScreen: React.FC = () => {
     },
     {
       id: 'theme',
-      title: 'Temas',
-      subtitle: `Tema atual: ${THEME_INFO[gameConfig.theme]?.name || 'Escuro'}`,
+      title: t('themes'),
+      subtitle: `${t('currentTheme')}: ${THEME_INFO[gameConfig.theme]?.name || 'Escuro'}`,
       icon: 'color-palette-outline',
       type: 'button' as const,
       onPress: handleThemePress,
+    },
+    {
+      id: 'removeAds',
+      title: t('removeAds'),
+      subtitle: t('removeAdsSubtitle'),
+      icon: 'diamond-outline',
+      type: 'button' as const,
+      onPress: handleRemoveAdsPress,
     },
   ];
 
   return (
     <LinearGradient colors={colors.gradient} style={styles.container}>
-      <StatusBar 
-        barStyle={theme === 'dark' ? 'light-content' : 'dark-content'} 
-        backgroundColor={colors.background} 
+      <StatusBar
+        barStyle={theme === 'dark' ? 'light-content' : 'dark-content'}
+        backgroundColor={colors.background}
       />
       <SafeAreaView style={styles.safeArea}>
-        
+
         {/* Header */}
-        <AppHeader 
+        <AppHeader
           title={t('settings')}
           showBackButton={true}
           showHomeButton={true}
@@ -120,7 +134,7 @@ const SettingsScreen: React.FC = () => {
           {/* Settings List */}
           <Animated.View entering={FadeInUp.delay(200).duration(600)} style={styles.settingsSection}>
             <Text style={styles.sectionTitle}>{t('preferences')}</Text>
-            
+
             <View style={styles.settingsList}>
               {settingsData.map((setting, index) => (
                 <Animated.View
@@ -130,9 +144,9 @@ const SettingsScreen: React.FC = () => {
                 >
                   <View style={styles.settingContent}>
                     <View style={styles.settingIcon}>
-                      <Ionicons name={setting.icon} size={24} color={COLORS.gold} />
+                      <Ionicons name={setting.icon as any} size={24} color={COLORS.gold} />
                     </View>
-                    
+
                     <View style={styles.settingText}>
                       <Text style={styles.settingTitle}>{setting.title}</Text>
                       <Text style={styles.settingSubtitle}>{setting.subtitle}</Text>
@@ -143,9 +157,9 @@ const SettingsScreen: React.FC = () => {
                         <Switch
                           value={setting.value}
                           onValueChange={setting.onToggle}
-                          trackColor={{ 
-                            false: COLORS.darkGray, 
-                            true: COLORS.gold + '80' 
+                          trackColor={{
+                            false: COLORS.darkGray,
+                            true: COLORS.gold + '80'
                           }}
                           thumbColor={setting.value ? COLORS.gold : COLORS.lightGray}
                         />
@@ -214,7 +228,7 @@ const SettingsScreen: React.FC = () => {
           {/* About Section */}
           <Animated.View entering={FadeInUp.delay(1000).duration(600)} style={styles.aboutSection}>
             <Text style={styles.sectionTitle}>{t('about')}</Text>
-            
+
             <View style={styles.aboutCard}>
               <Text style={styles.aboutTitle}>{t('aboutTitle')}</Text>
               <Text style={styles.aboutVersion}>{t('version')}</Text>

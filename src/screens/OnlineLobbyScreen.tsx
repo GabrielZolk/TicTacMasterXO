@@ -124,11 +124,12 @@ const OnlineLobbyScreen: React.FC = () => {
         setIsJoiningRoom(true);
 
         try {
-            await firebaseService.joinRoom(roomCode.toUpperCase(), playerName);
+            // joinRoom agora retorna os dados da sala, incluindo o modo de jogo correto
+            const roomData = await firebaseService.joinRoom(roomCode.toUpperCase(), playerName);
 
-            // Navegar para tela de espera
+            // Navegar para tela de espera usando o modo da SALA, não o modo local
             navigation.navigate('OnlineWaitingRoom' as any, {
-                mode,
+                mode: roomData.mode, // Usar o modo da sala (definido pelo Host)
                 roomCode: roomCode.toUpperCase(),
                 playerName,
                 isHost: false,

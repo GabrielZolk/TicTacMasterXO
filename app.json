@@ -2,36 +2,66 @@
   "expo": {
     "name": "TicTacMasterXO",
     "slug": "TicTacMasterXO",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/tttmxo.png",
     "userInterfaceStyle": "light",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#0A0A0A"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.zolk.TicTacMasterXO",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "SKAdNetworkItems": [
+          {
+            "SKAdNetworkIdentifier": "cstr6suwn9.skadnetwork"
+          }
+        ],
+        "NSUserTrackingUsageDescription": "Este app usa publicidade personalizada para manter-se gratuito."
       }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/android/mipmap-xxxhdpi/tttmxo.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#0A0A0A"
       },
       "package": "com.zolk.TicTacMasterXO",
-      "versionCode": 4,
-      "permissions": []
+      "versionCode": 6,
+      "permissions": [
+        "com.google.android.gms.permission.AD_ID",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "com.android.vending.BILLING"
+      ]
     },
     "web": {
       "favicon": "./assets/tttmxo.png"
     },
     "plugins": [
-      "expo-localization"
+      "expo-localization",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true,
+            "enableProguardInReleaseBuilds": true
+          },
+          "ios": {
+            "useFrameworks": "static"
+          }
+        }
+      ],
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-7541883201708712~6556059584",
+          "iosAppId": "ca-app-pub-7541883201708712~6556059584"
+        }
+      ]
     ],
     "extra": {
       "eas": {

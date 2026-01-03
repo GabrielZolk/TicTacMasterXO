@@ -1,18 +1,19 @@
 import React from 'react';
 import { View, StyleSheet, Dimensions } from 'react-native';
-import Animated, { 
-  useSharedValue, 
-  useAnimatedStyle, 
-  withTiming, 
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
   withSequence,
   withDelay,
 } from 'react-native-reanimated';
 
-import { Cell, WinningLine, GameMove } from '../types/game';
+import { Cell, WinningLine, GameMove, GravityFallAnimation } from '../types/game';
 import GameCell from './GameCell';
-import { 
-  COLORS, 
-  SPACING, 
+import GravityFallingPiece from './GravityFallingPiece';
+import {
+  COLORS,
+  SPACING,
   BORDER_RADIUS,
   GAME_DIMENSIONS,
   SHADOWS,
@@ -27,6 +28,9 @@ interface GameBoardProps {
   moves: GameMove[];
   isInfinityMode?: boolean;
   disabled?: boolean;
+  // Gravity mode props
+  pendingFall?: GravityFallAnimation;
+  onGravityFallComplete?: () => void;
 }
 
 const GameBoard: React.FC<GameBoardProps> = ({
@@ -36,6 +40,8 @@ const GameBoard: React.FC<GameBoardProps> = ({
   moves,
   isInfinityMode = false,
   disabled = false,
+  pendingFall,
+  onGravityFallComplete,
 }) => {
   const boardScale = useSharedValue(1);
   const borderGlow = useSharedValue(0);
@@ -69,25 +75,64 @@ const GameBoard: React.FC<GameBoardProps> = ({
     return winningLine.cells.some(cell => cell.row === row && cell.col === col);
   };
 
+  // Calculate position for gravity falling piece
+  const cellGap = SPACING.xs;
+  const getCellPosition = (row: number, col: number) => {
+    const cellWithGap = GAME_DIMENSIONS.cellSize + cellGap;
+    return {
+      top: SPACING.lg + (row * cellWithGap),
+      left: SPACING.lg + (col * cellWithGap),
+    };
+  };
+
   return (
     <View style={styles.container}>
       <Animated.View style={[styles.board, boardAnimatedStyle]}>
         {board.map((row, rowIndex) => (
           <View key={rowIndex} style={styles.row}>
-            {row.map((cell, colIndex) => (
-              <GameCell
-                key={`${rowIndex}-${colIndex}`}
-                value={cell}
-                row={rowIndex}
-                col={colIndex}
-                onPress={() => onCellPress(rowIndex, colIndex)}
-                isWinning={isCellInWinningLine(rowIndex, colIndex)}
-                disabled={disabled}
-                winningLine={winningLine}
-              />
-            ))}
+            {row.map((cell, colIndex) => {
+              // Check if this cell's piece should be hidden for gravity animation
+              const isAnimatingCell = pendingFall &&
+                pendingFall.isAnimating &&
+                rowIndex === pendingFall.startRow &&
+                colIndex === pendingFall.col;
+
+              return (
+                <GameCell
+                  key={`${rowIndex}-${colIndex}`}
+                  value={cell}
+                  row={rowIndex}
+                  col={colIndex}
+                  onPress={() => onCellPress(rowIndex, colIndex)}
+                  isWinning={isCellInWinningLine(rowIndex, colIndex)}
+                  disabled={disabled}
+                  winningLine={winningLine}
+                  isHiddenForAnimation={isAnimatingCell}
+                />
+              );
+            })}
           </View>
         ))}
+
+        {/* Gravity Falling Piece Animation */}
+        {pendingFall && pendingFall.isAnimating && onGravityFallComplete && (
+          <View
+            style={[
+              styles.fallingPieceContainer,
+              getCellPosition(pendingFall.startRow, pendingFall.col),
+            ]}
+          >
+            <GravityFallingPiece
+              player={pendingFall.player}
+              startRow={pendingFall.startRow}
+              endRow={pendingFall.endRow}
+              col={pendingFall.col}
+              onAnimationComplete={onGravityFallComplete}
+              cellSize={GAME_DIMENSIONS.cellSize}
+              cellGap={cellGap}
+            />
+          </View>
+        )}
       </Animated.View>
     </View>
   );
@@ -110,6 +155,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: SPACING.xs,
     justifyContent: 'center',
+  },
+  fallingPieceContainer: {
+    position: 'absolute',
+    zIndex: 100,
   },
 });
 

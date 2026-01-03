@@ -16,18 +16,21 @@ import {
   OpponentType,
   ExtendedGameState,
   GravityGameState,
+  GravityFallAnimation,
   BlindGameState,
   BigBoardGameState,
   SurvivalGameState,
+  BlitzGameState,
+  ReverseGameState,
 } from '../types/game';
 import { AIPlayer } from '../utils/aiPlayer';
 import { soundManager, SoundUtils } from '../utils/soundManager';
-import { 
-  createBoard, 
-  createBigBoard, 
-  applyGravity, 
-  checkWinCondition as checkWin, 
-  isBoardFull as isFull 
+import {
+  createBoard,
+  createBigBoard,
+  applyGravity,
+  checkWinCondition as checkWin,
+  isBoardFull as isFull
 } from '../utils/gameLogic';
 
 // Initial states
@@ -62,7 +65,7 @@ const createInitialGameState = (mode: GameMode): ExtendedGameState => {
         oldestMoveIndex: 0,
         nextToRemove: undefined,
       } as InfinityGameState;
-      
+
     case 'bigBoard':
       return {
         ...initialGameState,
@@ -70,17 +73,14 @@ const createInitialGameState = (mode: GameMode): ExtendedGameState => {
         boardSize: 4,
         winCondition: 4,
       } as BigBoardGameState;
-      
-      
+
     case 'blind':
       return {
         ...initialGameState,
         hiddenMoves: [],
         hideDelay: 3000,
       } as BlindGameState;
-      
-      
-      
+
     case 'survival':
       return {
         ...initialGameState,
@@ -88,8 +88,24 @@ const createInitialGameState = (mode: GameMode): ExtendedGameState => {
         maxLives: 3,
         consecutiveWins: 0,
       } as SurvivalGameState;
-      
-      
+
+    case 'blitz':
+      return {
+        ...initialGameState,
+        timePerMove: 3, // Default 3 seconds per move
+        currentTurnStartTime: Date.now(),
+        timeRemaining: 3,
+        timedOut: false,
+        timedOutPlayer: null,
+      } as BlitzGameState;
+
+    case 'reverse':
+      // Reverse mode uses standard board but inverted win logic
+      // (whoever makes 3 in a line LOSES)
+      return {
+        ...initialGameState,
+      } as ReverseGameState;
+
     default:
       return { ...initialGameState };
   }
@@ -131,7 +147,11 @@ type GameAction =
   | { type: 'SET_AI_THINKING'; payload: boolean }
   | { type: 'SET_TROLL_MESSAGE'; payload: string | null }
   | { type: 'UPDATE_SURVIVAL_STATS'; payload: { lives?: number; consecutiveWins?: number } }
-  | { type: 'LOAD_STORED_DATA'; payload: { config: GameConfig; stats: GameStats } };
+  | { type: 'LOAD_STORED_DATA'; payload: { config: GameConfig; stats: GameStats } }
+  | { type: 'BLITZ_TIMEOUT'; payload: { player: Player } }
+  | { type: 'SET_BLITZ_TIME'; payload: number }
+  | { type: 'GRAVITY_EARTHQUAKE' }
+  | { type: 'COMPLETE_GRAVITY_FALL' };
 
 interface GameContextValue {
   gameState: ExtendedGameState;
@@ -155,6 +175,12 @@ interface GameContextValue {
   makeAIMove: () => Promise<void>;
   trollMessage: string | null;
   clearTrollMessage: () => void;
+  // Blitz mode functions
+  handleBlitzTimeout: (player: Player) => void;
+  setBlitzTime: (seconds: number) => void;
+  // Gravity mode functions
+  triggerEarthquake: () => void;
+  completeGravityFall: () => void;
 }
 
 const GameContext = createContext<GameContextValue | undefined>(undefined);
@@ -221,16 +247,44 @@ const gameReducer = (
       let actualRow = row;
       let actualCol = col;
       let newBoard: Cell[][];
-      
+      let gravityWillFall = false; // Track gravity decision for later use
+      let gravityLowestRow = row; // Track where piece will fall to
+
       // Handle different game modes
       if (mode === 'gravity') {
-        // In gravity mode, pieces fall to the lowest available position in the column
-        const gravityResult = applyGravity(game.board, col, game.currentPlayer);
-        if (!gravityResult) {
-          return state; // Column is full
+        // Gravity mode: Piece appears at clicked position first, then may fall with animation
+        if (game.board[row][col] !== null) {
+          return state; // Cell is occupied
         }
-        newBoard = gravityResult.board;
-        actualRow = gravityResult.row;
+
+        newBoard = game.board.map(r => [...r]);
+
+        // Check if piece will fall (40% chance and there's space below)
+        let lowestEmptyRow = row;
+
+        // Find the lowest empty position below the clicked cell
+        for (let r = row + 1; r < 3; r++) {
+          if (game.board[r][col] === null) {
+            lowestEmptyRow = r;
+          } else {
+            break; // Stop at first occupied cell
+          }
+        }
+
+        // Determine if gravity effect triggers (40% chance if there's space below)
+        gravityWillFall = lowestEmptyRow > row && Math.random() < 0.4;
+        gravityLowestRow = lowestEmptyRow;
+
+        // IMPORTANT: Always place the piece at the CLICKED position first
+        // The animation will visually show the fall, then COMPLETE_GRAVITY_FALL
+        // will move it to the final position
+        newBoard[row][col] = game.currentPlayer;
+        actualRow = row; // Initially at clicked position
+        actualCol = col;
+
+        if (gravityWillFall) {
+          console.log(`🪐 Gravity! Piece appears at (${row}, ${col}), will animate fall to (${lowestEmptyRow}, ${col})`);
+        }
       } else {
         // Standard modes - check if cell is occupied
         if (game.board[row][col] !== null) {
@@ -270,15 +324,15 @@ const gameReducer = (
         // If we have more than 6 pieces, remove the oldest FIRST
         if (newMoveCount > maxPieces) {
           const moveToRemove = newMoves[oldestMoveIndex];
-          
+
           if (moveToRemove) {
             console.log(`🎮 Infinity Mode: Removing piece at (${moveToRemove.row}, ${moveToRemove.col}) - Move #${moveToRemove.moveNumber}`);
-            
+
             // Remove the oldest move from the board
             const boardAfterRemoval = newBoard.map(row => [...row]);
             boardAfterRemoval[moveToRemove.row][moveToRemove.col] = null;
             finalBoard = boardAfterRemoval;
-            
+
             console.log(`🎮 Infinity Mode: Board after removal:`, boardAfterRemoval.map(row => row.map(cell => cell || '.')).join('\n'));
           }
         }
@@ -287,10 +341,30 @@ const gameReducer = (
         finalWinner = checkWin(finalBoard, winLength);
         // Infinity mode never has draws
         finalIsDraw = false;
+      } else if (state.config.mode === 'reverse') {
+        // Reverse mode: whoever makes 3 in a line LOSES
+        // So we check if the CURRENT player made 3 in line
+        // If they did, the OPPONENT wins
+        finalWinner = checkWin(newBoard, winLength);
+        finalIsDraw = !finalWinner && isFull(newBoard);
       } else {
         // For other modes, check winner normally
         finalWinner = checkWin(newBoard, winLength);
         finalIsDraw = !finalWinner && isFull(newBoard);
+      }
+
+      // Determine the actual winner based on mode
+      let actualWinner: Player | null = null;
+      if (finalWinner) {
+        if (state.config.mode === 'reverse') {
+          // In Reverse mode, the player who made 3 in line LOSES
+          // So the opponent wins
+          actualWinner = game.currentPlayer === 'X' ? 'O' : 'X';
+          console.log(`🔄 Reverse Mode: ${game.currentPlayer} made 3 in line and LOSES! ${actualWinner} wins!`);
+        } else {
+          // Normal modes: current player wins
+          actualWinner = game.currentPlayer;
+        }
       }
 
       let updatedGame: ExtendedGameState = {
@@ -299,22 +373,30 @@ const gameReducer = (
         currentPlayer: game.currentPlayer === 'X' ? 'O' : 'X',
         moves: newMoves,
         moveCount: newMoveCount,
-        winner: finalWinner ? game.currentPlayer : null,
+        winner: actualWinner,
         isDraw: finalIsDraw,
       };
+
+      // Handle Blitz mode - reset timer for next player
+      if (state.config.mode === 'blitz' && !actualWinner && !finalIsDraw) {
+        const blitzGame = updatedGame as BlitzGameState;
+        blitzGame.currentTurnStartTime = Date.now();
+        blitzGame.timeRemaining = blitzGame.timePerMove;
+        updatedGame = blitzGame;
+      }
 
       // Update infinity mode specific state
       if (state.config.mode === 'infinity') {
         const infinityGame = updatedGame as unknown as InfinityGameState;
         const currentInfinityState = game as InfinityGameState;
-        
+
         infinityGame.maxPieces = 6;
         infinityGame.oldestMoveIndex = currentInfinityState.oldestMoveIndex || 0;
 
         // Update oldestMoveIndex if we removed a piece
         if (newMoveCount > infinityGame.maxPieces) {
           infinityGame.oldestMoveIndex += 1;
-          
+
           // Set next piece to be removed (if there will be one)
           if (infinityGame.oldestMoveIndex < newMoves.length) {
             infinityGame.nextToRemove = newMoves[infinityGame.oldestMoveIndex];
@@ -333,26 +415,44 @@ const gameReducer = (
       if (state.config.mode === 'blind') {
         const blindGame = updatedGame as BlindGameState;
         blindGame.hiddenMoves = [...blindGame.hiddenMoves];
-        
+
         // Hide moves older than 2 moves (keep only last move from each player visible)
         const playerXMoves = blindGame.moves.filter(m => m.player === 'X');
         const playerOMoves = blindGame.moves.filter(m => m.player === 'O');
-        
+
         // Mark moves to hide (all except the last one from each player)
         const movesToHide = [
           ...playerXMoves.slice(0, -1),
           ...playerOMoves.slice(0, -1)
         ];
-        
+
         blindGame.hiddenMoves = movesToHide;
         blindGame.lastVisibleMove = newMove;
-        
+
         updatedGame = blindGame;
       }
 
+      // Handle Gravity mode pendingFall animation
+      if (state.config.mode === 'gravity') {
+        const gravityGame = updatedGame as GravityGameState;
+        const originalRow = action.payload.row;
 
+        // Use the already-calculated gravity decision from above
+        if (gravityWillFall) {
+          gravityGame.pendingFall = {
+            player: newMove.player,
+            col: actualCol,
+            startRow: originalRow,
+            endRow: gravityLowestRow,
+            isAnimating: true,
+          };
+          console.log(`🪐 Gravity animation pending: piece at (${originalRow}, ${actualCol}) will fall to (${gravityLowestRow}, ${actualCol})`);
+        } else {
+          gravityGame.pendingFall = undefined;
+        }
 
-
+        updatedGame = gravityGame;
+      }
 
       return {
         ...state,
@@ -362,6 +462,16 @@ const gameReducer = (
 
     case 'RESTART_GAME': {
       const newGameState = createInitialGameState(state.config.mode);
+
+      // Preserve Blitz timePerMove setting
+      if (state.config.mode === 'blitz') {
+        const currentBlitzState = state.game as BlitzGameState;
+        const newBlitzState = newGameState as BlitzGameState;
+        newBlitzState.timePerMove = currentBlitzState.timePerMove;
+        newBlitzState.timeRemaining = currentBlitzState.timePerMove;
+        newBlitzState.currentTurnStartTime = Date.now();
+      }
+
       return {
         ...state,
         game: newGameState,
@@ -370,6 +480,16 @@ const gameReducer = (
 
     case 'NEW_ROUND': {
       const newGameState = createInitialGameState(state.config.mode);
+
+      // Preserve Blitz timePerMove setting
+      if (state.config.mode === 'blitz') {
+        const currentBlitzState = state.game as BlitzGameState;
+        const newBlitzState = newGameState as BlitzGameState;
+        newBlitzState.timePerMove = currentBlitzState.timePerMove;
+        newBlitzState.timeRemaining = currentBlitzState.timePerMove;
+        newBlitzState.currentTurnStartTime = Date.now();
+      }
+
       return {
         ...state,
         game: newGameState,
@@ -455,6 +575,140 @@ const gameReducer = (
         stats: action.payload.stats,
       };
 
+    case 'BLITZ_TIMEOUT': {
+      // Player ran out of time - they lose, opponent wins
+      if (state.config.mode === 'blitz') {
+        const blitzGame = state.game as BlitzGameState;
+        const winner = action.payload.player === 'X' ? 'O' : 'X';
+        console.log(`⏱️ Blitz Mode: ${action.payload.player} ran out of time! ${winner} wins!`);
+        return {
+          ...state,
+          game: {
+            ...blitzGame,
+            winner: winner,
+            timedOut: true,
+            timedOutPlayer: action.payload.player,
+          },
+        };
+      }
+      return state;
+    }
+
+    case 'SET_BLITZ_TIME': {
+      // Set the time per move for blitz mode (1-5 seconds)
+      if (state.config.mode === 'blitz') {
+        const blitzGame = state.game as BlitzGameState;
+        const time = Math.max(1, Math.min(5, action.payload)); // Clamp between 1-5
+        return {
+          ...state,
+          game: {
+            ...blitzGame,
+            timePerMove: time,
+            timeRemaining: time,
+            currentTurnStartTime: Date.now(),
+          },
+        };
+      }
+      return state;
+    }
+
+    case 'GRAVITY_EARTHQUAKE': {
+      // In gravity mode, randomly make pieces fall if there's empty space below
+      if (state.config.mode === 'gravity') {
+        const board = state.game.board.map(row => [...row]);
+        let hadFall = false;
+
+        // Check each column for pieces that can fall
+        for (let col = 0; col < 3; col++) {
+          for (let row = 0; row < 2; row++) { // Don't check bottom row
+            const piece = board[row][col];
+            const belowPiece = board[row + 1][col];
+
+            // If there's a piece and empty space below, make it fall
+            if (piece !== null && belowPiece === null) {
+              // Random chance to fall (30%)
+              if (Math.random() < 0.3) {
+                board[row + 1][col] = piece;
+                board[row][col] = null;
+                hadFall = true;
+                console.log(`🌍 Earthquake! Piece at (${row}, ${col}) fell to (${row + 1}, ${col})`);
+              }
+            }
+          }
+        }
+
+        if (hadFall) {
+          // Check if the earthquake caused a win
+          const winLength = 3;
+          const winner = checkWin(board, winLength);
+
+          return {
+            ...state,
+            game: {
+              ...state.game,
+              board,
+              winner: winner ? state.game.currentPlayer : null,
+            },
+          };
+        }
+      }
+      return state;
+    }
+
+    case 'COMPLETE_GRAVITY_FALL': {
+      // Complete the gravity fall: move piece from startRow to endRow
+      if (state.config.mode === 'gravity') {
+        const gravityGame = state.game as GravityGameState;
+        const pendingFall = gravityGame.pendingFall;
+
+        if (pendingFall && pendingFall.isAnimating) {
+          // Move the piece from startRow to endRow
+          const newBoard = gravityGame.board.map(r => [...r]);
+          const { startRow, endRow, col, player } = pendingFall;
+
+          // Remove from start position
+          newBoard[startRow][col] = null;
+          // Place at end position
+          newBoard[endRow][col] = player;
+
+          console.log(`🪐 Gravity fall complete: piece moved from (${startRow}, ${col}) to (${endRow}, ${col})`);
+
+          // Check for winner after the fall completes
+          const winner = checkWin(newBoard, 3);
+          const isDraw = !winner && isFull(newBoard);
+
+          // Update moves array with correct final position
+          const updatedMoves = gravityGame.moves.map((move, index) => {
+            if (index === gravityGame.moves.length - 1 && move.col === col && move.row === startRow) {
+              return { ...move, row: endRow };
+            }
+            return move;
+          });
+
+          return {
+            ...state,
+            game: {
+              ...gravityGame,
+              board: newBoard,
+              moves: updatedMoves,
+              pendingFall: undefined,
+              winner: winner ? player : gravityGame.winner,
+              isDraw: isDraw,
+            },
+          };
+        }
+
+        return {
+          ...state,
+          game: {
+            ...gravityGame,
+            pendingFall: undefined,
+          },
+        };
+      }
+      return state;
+    }
+
     default:
       return state;
   }
@@ -478,7 +732,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       try {
         // Initialize sound system
         await SoundUtils.preloadSounds();
-        
+
         // Load stored data
         const [storedConfig, storedStats] = await Promise.all([
           AsyncStorage.getItem('@game_config'),
@@ -520,12 +774,12 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   React.useEffect(() => {
     if (state.config.difficulty) {
       aiPlayer.setDifficulty(state.config.difficulty);
-      
+
       // Set up troll message callback
       if (state.config.difficulty === 'troll') {
         aiPlayer.setTrollMessageCallback((message: string) => {
           dispatch({ type: 'SET_TROLL_MESSAGE', payload: message });
-          
+
           // Auto clear message after 3 seconds
           setTimeout(() => {
             dispatch({ type: 'SET_TROLL_MESSAGE', payload: null });
@@ -549,12 +803,13 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       // Simulate thinking time
       await aiPlayer.simulateThinking();
-      
+
       const aiMove = aiPlayer.getBestMove(
         state.game.board,
         state.config.mode === 'infinity',
         state.game.moves,
-        state.config.mode === 'infinity' ? 6 : undefined
+        state.config.mode === 'infinity' ? 6 : undefined,
+        state.config.mode === 'reverse' // isReverseMode - AI should try to lose
       );
 
       if (aiMove) {
@@ -593,29 +848,29 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const updateGameStats = useCallback((winner: Player | null, isDraw: boolean) => {
     const newStats = { ...state.stats };
-    
+
     // Handle Survival Mode
     if (state.config.mode === 'survival') {
       const survivalGame = state.game as SurvivalGameState;
-      
+
       if (winner === 'X') {
         // Player won - increase consecutive wins
         const newConsecutiveWins = survivalGame.consecutiveWins + 1;
-        dispatch({ 
-          type: 'UPDATE_SURVIVAL_STATS', 
-          payload: { consecutiveWins: newConsecutiveWins } 
+        dispatch({
+          type: 'UPDATE_SURVIVAL_STATS',
+          payload: { consecutiveWins: newConsecutiveWins }
         });
       } else if (winner === 'O' || isDraw) {
         // Player lost or drew - lose a life
         const newLives = survivalGame.lives - 1;
-        dispatch({ 
-          type: 'UPDATE_SURVIVAL_STATS', 
-          payload: { 
+        dispatch({
+          type: 'UPDATE_SURVIVAL_STATS',
+          payload: {
             lives: newLives,
             consecutiveWins: 0 // Reset streak on loss/draw
-          } 
+          }
         });
-        
+
         if (newLives <= 0) {
           // Game Over - restart survival mode ONLY in survival mode
           setTimeout(() => {
@@ -627,10 +882,10 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
       }
     }
-    
+
     // Increment total games
     newStats.totalGames += 1;
-    
+
     if (isDraw) {
       // Update draw stats for both players
       newStats.playerX.draws += 1;
@@ -639,17 +894,17 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } else if (winner) {
       // Update winner and loser stats
       const loser: Player = winner === 'X' ? 'O' : 'X';
-      
+
       newStats[`player${winner}`].wins += 1;
       newStats[`player${loser}`].losses += 1;
-      
+
       // Update streak
       newStats.currentStreak += 1;
       if (newStats.currentStreak > newStats.bestStreak) {
         newStats.bestStreak = newStats.currentStreak;
       }
     }
-    
+
     dispatch({ type: 'UPDATE_STATS', payload: newStats });
   }, [state.stats, state.config.mode]);
 
@@ -664,7 +919,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     try {
       await SoundUtils.playFeedback(soundType as any, true);
-      
+
       // Special handling for victory sound
       if (soundType === 'win') {
         setTimeout(() => {
@@ -699,12 +954,12 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const checkWinner = useCallback(() => {
     const { mode } = state.config;
     let winLength = 3;
-    
+
     if (mode === 'bigBoard') {
       const bigBoardGame = state.game as BigBoardGameState;
       winLength = bigBoardGame.winCondition || 4;
     }
-    
+
     return checkWin(state.game.board, winLength);
   }, [state.game.board, state.config.mode]);
 
@@ -712,7 +967,23 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     dispatch({ type: 'SET_TROLL_MESSAGE', payload: null });
   }, []);
 
+  // Blitz mode functions
+  const handleBlitzTimeout = useCallback((player: Player) => {
+    dispatch({ type: 'BLITZ_TIMEOUT', payload: { player } });
+  }, []);
 
+  const setBlitzTime = useCallback((seconds: number) => {
+    dispatch({ type: 'SET_BLITZ_TIME', payload: seconds });
+  }, []);
+
+  // Gravity mode functions
+  const triggerEarthquake = useCallback(() => {
+    dispatch({ type: 'GRAVITY_EARTHQUAKE' });
+  }, []);
+
+  const completeGravityFall = useCallback(() => {
+    dispatch({ type: 'COMPLETE_GRAVITY_FALL' });
+  }, []);
 
   const value: GameContextValue = {
     gameState: state.game,
@@ -736,6 +1007,10 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     makeAIMove,
     trollMessage: state.trollMessage,
     clearTrollMessage,
+    handleBlitzTimeout,
+    setBlitzTime,
+    triggerEarthquake,
+    completeGravityFall,
   };
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

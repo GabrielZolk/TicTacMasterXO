@@ -4,7 +4,7 @@ export const translations = {
     homeTitle: 'TicTac Master XO',
     chooseGameMode: 'Escolha o Modo de Jogo',
     madeWithLove: 'Feito com ❤️ para amantes do jogo da velha',
-    
+
     // Game Modes
     vsAI: {
       title: 'VS IA',
@@ -28,8 +28,8 @@ export const translations = {
     },
     gravity: {
       title: 'Gravity',
-      subtitle: 'Peças caem',
-      description: 'Peças caem para baixo!',
+      subtitle: 'Peças instáveis',
+      description: 'Jogue onde quiser! Peças podem cair aleatoriamente!',
     },
     blind: {
       title: 'Cego',
@@ -46,6 +46,16 @@ export const translations = {
       subtitle: 'Vidas limitadas',
       description: '3 vidas - não perca todas!',
     },
+    blitz: {
+      title: 'Blitz',
+      subtitle: 'Contra o tempo',
+      description: 'Cada jogador tem segundos limitados para jogar. Demorou? Perdeu!',
+    },
+    reverse: {
+      title: 'Reverso',
+      subtitle: 'Regras invertidas',
+      description: 'Quem fizer 3 em linha PERDE! Evite vencer!',
+    },
 
     // Opponent Selection
     chooseOpponent: 'Escolher Oponente',
@@ -53,7 +63,7 @@ export const translations = {
     tip: 'Dica',
     classicTip: 'No Modo Clássico, vence quem conseguir 3 peças em linha primeiro!',
     infinityTip: 'No Modo Infinito, as peças mais antigas são removidas automaticamente após 6 jogadas!',
-    
+
     // Difficulty Screen
     chooseDifficulty: 'Escolha a Dificuldade',
     whatChallenge: 'Qual nível de desafio você quer?',
@@ -85,8 +95,7 @@ export const translations = {
       },
     },
     difficultyTip: 'O modo Troll inclui mensagens provocativas durante o jogo. Ideal para quem gosta de um pouco de diversão extra!',
-    tip: 'Dica',
-    
+
     // Game Screen
     playerTurn: 'Vez do Jogador',
     playerWins: 'Jogador {player} Ganhou!',
@@ -101,7 +110,7 @@ export const translations = {
     pieces: 'Peças',
     infinityDescription: 'Peças mais antigas são removidas automaticamente',
     gameOptions: 'Opções do Jogo',
-    
+
     // Game End Modal
     gameResult: {
       victory: 'Vitória!',
@@ -117,7 +126,7 @@ export const translations = {
       playAgain: 'Jogar Novamente',
       viewBoard: 'Ver Tabuleiro',
     },
-    
+
     // Settings Screen
     settings: 'Configurações',
     preferences: 'Preferências',
@@ -133,7 +142,7 @@ export const translations = {
     aboutTitle: 'TicTac Master XO',
     version: 'Versão 1.0.0',
     aboutDescription: 'A melhor experiência de jogo da velha com múltiplos modos de jogo, oponentes IA, e o inovador Modo Infinito. Desafie-se e seus amigos nesta versão moderna do jogo clássico.',
-    
+
     // Statistics Screen
     statistics: 'Estatísticas',
     overallStats: 'Estatísticas Gerais',
@@ -149,11 +158,11 @@ export const translations = {
     draws: 'Empates',
     playerXWins: 'Vitórias do Jogador X',
     playerOWins: 'Vitórias do Jogador O',
-    
+
     // Themes
     dark: 'escuro',
     light: 'claro',
-    
+
     // Languages
     languages: {
       pt: 'Português',
@@ -161,7 +170,7 @@ export const translations = {
       es: 'Español',
       fr: 'Français',
     },
-    
+
     // Game Status
     gameStatus: {
       win: 'Você Ganhou! 🎉',
@@ -172,14 +181,20 @@ export const translations = {
       playerXWin: 'Jogador X Ganhou!',
       playerOWin: 'Jogador O Ganhou!',
     },
+
+    // Remove Ads
+    removeAds: '✨ Remover Anúncios',
+    removeAdsSubtitle: 'Assine para jogar sem interrupções',
+    themes: 'Temas',
+    currentTheme: 'Tema atual',
   },
-  
+
   en: {
     // Home Screen
     homeTitle: 'TicTac Master XO',
     chooseGameMode: 'Choose Game Mode',
     madeWithLove: 'Made with ❤️ for tic-tac-toe lovers',
-    
+
     // Game Modes
     vsAI: {
       title: 'VS AI',
@@ -203,8 +218,8 @@ export const translations = {
     },
     gravity: {
       title: 'Gravity',
-      subtitle: 'Pieces fall down',
-      description: 'Pieces fall down!',
+      subtitle: 'Unstable pieces',
+      description: 'Play anywhere! Pieces may randomly fall!',
     },
     blind: {
       title: 'Blind',
@@ -221,6 +236,16 @@ export const translations = {
       subtitle: 'Limited lives',
       description: '3 lives - don\'t lose them all!',
     },
+    blitz: {
+      title: 'Blitz',
+      subtitle: 'Against time',
+      description: 'Each player has limited seconds to play. Too slow? You lose!',
+    },
+    reverse: {
+      title: 'Reverse',
+      subtitle: 'Inverted rules',
+      description: 'Whoever makes 3 in a line LOSES! Avoid winning!',
+    },
 
     // Opponent Selection
     chooseOpponent: 'Choose Opponent',
@@ -228,7 +253,7 @@ export const translations = {
     tip: 'Tip',
     classicTip: 'In Classic Mode, first to get 3 pieces in a line wins!',
     infinityTip: 'In Infinity Mode, oldest pieces are automatically removed after 6 moves!',
-    
+
     // Difficulty Screen
     chooseDifficulty: 'Choose Difficulty',
     whatChallenge: 'What level of challenge do you want?',
@@ -260,8 +285,7 @@ export const translations = {
       },
     },
     difficultyTip: 'Troll mode includes provocative messages during the game. Ideal for those who like a little extra fun!',
-    tip: 'Tip',
-    
+
     // Game Screen
     playerTurn: 'Player Turn',
     playerWins: 'Player {player} Wins!',
@@ -276,7 +300,7 @@ export const translations = {
     pieces: 'Pieces',
     infinityDescription: 'Oldest pieces are automatically removed',
     gameOptions: 'Game Options',
-    
+
     // Game End Modal
     gameResult: {
       victory: 'Victory!',
@@ -292,7 +316,7 @@ export const translations = {
       playAgain: 'Play Again',
       viewBoard: 'View Board',
     },
-    
+
     // Settings Screen
     settings: 'Settings',
     preferences: 'Preferences',
@@ -308,7 +332,7 @@ export const translations = {
     aboutTitle: 'TicTac Master XO',
     version: 'Version 1.0.0',
     aboutDescription: 'The ultimate tic-tac-toe experience with multiple game modes, AI opponents, and innovative Infinity Mode. Challenge yourself and friends in this modern take on the classic game.',
-    
+
     // Statistics Screen
     statistics: 'Statistics',
     overallStats: 'Overall Statistics',
@@ -324,11 +348,11 @@ export const translations = {
     draws: 'Draws',
     playerXWins: 'Player X Wins',
     playerOWins: 'Player O Wins',
-    
+
     // Themes
     dark: 'dark',
     light: 'light',
-    
+
     // Languages
     languages: {
       pt: 'Português',
@@ -336,7 +360,7 @@ export const translations = {
       es: 'Español',
       fr: 'Français',
     },
-    
+
     // Game Status
     gameStatus: {
       win: 'You Won! 🎉',
@@ -347,14 +371,20 @@ export const translations = {
       playerXWin: 'Player X Wins!',
       playerOWin: 'Player O Wins!',
     },
+
+    // Remove Ads
+    removeAds: '✨ Remove Ads',
+    removeAdsSubtitle: 'Subscribe for uninterrupted play',
+    themes: 'Themes',
+    currentTheme: 'Current theme',
   },
-  
+
   es: {
     // Home Screen
     homeTitle: 'TicTac Master XO',
     chooseGameMode: 'Elige Modo de Juego',
     madeWithLove: 'Hecho con ❤️ para amantes del tres en raya',
-    
+
     // Game Modes
     vsAI: {
       title: 'VS IA',
@@ -378,8 +408,8 @@ export const translations = {
     },
     gravity: {
       title: 'Gravedad',
-      subtitle: 'Las piezas caen',
-      description: '¡Las piezas caen hacia abajo!',
+      subtitle: 'Piezas inestables',
+      description: '¡Juega donde quieras! ¡Las piezas pueden caer aleatoriamente!',
     },
     blind: {
       title: 'Ciego',
@@ -396,6 +426,16 @@ export const translations = {
       subtitle: 'Vidas limitadas',
       description: '¡3 vidas - no las pierdas todas!',
     },
+    blitz: {
+      title: 'Blitz',
+      subtitle: 'Contra el tiempo',
+      description: '¡Cada jugador tiene segundos limitados para jugar. ¿Muy lento? ¡Pierdes!',
+    },
+    reverse: {
+      title: 'Reverso',
+      subtitle: 'Reglas invertidas',
+      description: '¡Quien haga 3 en línea PIERDE! ¡Evita ganar!',
+    },
 
     // Opponent Selection
     chooseOpponent: 'Elegir Oponente',
@@ -403,7 +443,7 @@ export const translations = {
     tip: 'Consejo',
     classicTip: '¡En Modo Clásico, gana quien consiga 3 piezas en línea primero!',
     infinityTip: '¡En Modo Infinito, las piezas más antiguas se eliminan automáticamente después de 6 movimientos!',
-    
+
     // Difficulty Screen
     chooseDifficulty: 'Elige Dificultad',
     whatChallenge: '¿Qué nivel de desafío quieres?',
@@ -435,8 +475,7 @@ export const translations = {
       },
     },
     difficultyTip: '¡El modo Troll incluye mensajes provocativos durante el juego. Ideal para quienes gustan de diversión extra!',
-    tip: 'Consejo',
-    
+
     // Game Screen
     playerTurn: 'Turno del Jugador',
     playerWins: '¡Jugador {player} Gana!',
@@ -451,7 +490,7 @@ export const translations = {
     pieces: 'Piezas',
     infinityDescription: 'Las piezas más antiguas se eliminan automáticamente',
     gameOptions: 'Opciones del Juego',
-    
+
     // Game End Modal
     gameResult: {
       victory: '¡Victoria!',
@@ -467,7 +506,7 @@ export const translations = {
       playAgain: 'Jugar de Nuevo',
       viewBoard: 'Ver Tablero',
     },
-    
+
     // Settings Screen
     settings: 'Configuración',
     preferences: 'Preferencias',
@@ -483,7 +522,7 @@ export const translations = {
     aboutTitle: 'TicTac Master XO',
     version: 'Versión 1.0.0',
     aboutDescription: 'La mejor experiencia de tres en raya con múltiples modos de juego, oponentes IA, y el innovador Modo Infinito. Desafíate a ti mismo y a tus amigos en esta versión moderna del juego clásico.',
-    
+
     // Statistics Screen
     statistics: 'Estadísticas',
     overallStats: 'Estadísticas Generales',
@@ -499,11 +538,11 @@ export const translations = {
     draws: 'Empates',
     playerXWins: 'Victorias del Jugador X',
     playerOWins: 'Victorias del Jugador O',
-    
+
     // Themes
     dark: 'oscuro',
     light: 'claro',
-    
+
     // Languages
     languages: {
       pt: 'Português',
@@ -511,7 +550,7 @@ export const translations = {
       es: 'Español',
       fr: 'Français',
     },
-    
+
     // Game Status
     gameStatus: {
       win: '¡Ganaste! 🎉',
@@ -522,14 +561,20 @@ export const translations = {
       playerXWin: '¡Jugador X Gana!',
       playerOWin: '¡Jugador O Gana!',
     },
+
+    // Remove Ads
+    removeAds: '✨ Quitar Anuncios',
+    removeAdsSubtitle: 'Suscríbete para jugar sin interrupciones',
+    themes: 'Temas',
+    currentTheme: 'Tema actual',
   },
-  
+
   fr: {
     // Home Screen
     homeTitle: 'TicTac Master XO',
     chooseGameMode: 'Choisir le Mode de Jeu',
     madeWithLove: 'Fait avec ❤️ pour les amateurs de morpion',
-    
+
     // Game Modes
     vsAI: {
       title: 'VS IA',
@@ -553,8 +598,8 @@ export const translations = {
     },
     gravity: {
       title: 'Gravité',
-      subtitle: 'Les pièces tombent',
-      description: 'Les pièces tombent vers le bas !',
+      subtitle: 'Pièces instables',
+      description: 'Jouez où vous voulez ! Les pièces peuvent tomber aléatoirement !',
     },
     blind: {
       title: 'Aveugle',
@@ -571,6 +616,16 @@ export const translations = {
       subtitle: 'Vies limitées',
       description: '3 vies - ne les perdez pas toutes !',
     },
+    blitz: {
+      title: 'Blitz',
+      subtitle: 'Contre la montre',
+      description: 'Chaque joueur a des secondes limitées pour jouer. Trop lent ? Vous perdez !',
+    },
+    reverse: {
+      title: 'Inverse',
+      subtitle: 'Règles inversées',
+      description: 'Celui qui fait 3 en ligne PERD ! Évitez de gagner !',
+    },
 
     // Opponent Selection
     chooseOpponent: 'Choisir l\'Adversaire',
@@ -578,7 +633,7 @@ export const translations = {
     tip: 'Astuce',
     classicTip: 'En Mode Classique, le premier à obtenir 3 pièces en ligne gagne !',
     infinityTip: 'En Mode Infini, les pièces les plus anciennes sont supprimées automatiquement après 6 coups !',
-    
+
     // Difficulty Screen
     chooseDifficulty: 'Choisir la Difficulté',
     whatChallenge: 'Quel niveau de défi voulez-vous ?',
@@ -610,8 +665,7 @@ export const translations = {
       },
     },
     difficultyTip: 'Le mode Troll inclut des messages provocateurs pendant le jeu. Idéal pour ceux qui aiment un peu de fun supplémentaire !',
-    tip: 'Astuce',
-    
+
     // Game Screen
     playerTurn: 'Tour du Joueur',
     playerWins: 'Le Joueur {player} Gagne !',
@@ -626,7 +680,7 @@ export const translations = {
     pieces: 'Pièces',
     infinityDescription: 'Les pièces les plus anciennes sont supprimées automatiquement',
     gameOptions: 'Options du Jeu',
-    
+
     // Game End Modal
     gameResult: {
       victory: 'Victoire !',
@@ -642,7 +696,7 @@ export const translations = {
       playAgain: 'Rejouer',
       viewBoard: 'Voir le Plateau',
     },
-    
+
     // Settings Screen
     settings: 'Paramètres',
     preferences: 'Préférences',
@@ -658,7 +712,7 @@ export const translations = {
     aboutTitle: 'TicTac Master XO',
     version: 'Version 1.0.0',
     aboutDescription: 'L\'expérience ultime du morpion avec plusieurs modes de jeu, des adversaires IA, et le Mode Infini innovant. Défiez-vous et vos amis dans cette version moderne du jeu classique.',
-    
+
     // Statistics Screen
     statistics: 'Statistiques',
     overallStats: 'Statistiques Générales',
@@ -674,11 +728,11 @@ export const translations = {
     draws: 'Matchs Nuls',
     playerXWins: 'Victoires du Joueur X',
     playerOWins: 'Victoires du Joueur O',
-    
+
     // Themes
     dark: 'sombre',
     light: 'clair',
-    
+
     // Languages
     languages: {
       pt: 'Português',
@@ -686,7 +740,7 @@ export const translations = {
       es: 'Español',
       fr: 'Français',
     },
-    
+
     // Game Status
     gameStatus: {
       win: 'Vous avez Gagné ! 🎉',
@@ -697,6 +751,12 @@ export const translations = {
       playerXWin: 'Le Joueur X Gagne !',
       playerOWin: 'Le Joueur O Gagne !',
     },
+
+    // Remove Ads
+    removeAds: '✨ Supprimer les Pubs',
+    removeAdsSubtitle: 'Abonnez-vous pour jouer sans interruption',
+    themes: 'Thèmes',
+    currentTheme: 'Thème actuel',
   },
 } as const;
 
@@ -704,7 +764,7 @@ export type Language = keyof typeof translations;
 export type TranslationKey = keyof typeof translations['pt'];
 
 // Helper type for nested translation keys
-export type NestedTranslationKey = 
+export type NestedTranslationKey =
   | 'vsAI.title' | 'vsAI.subtitle' | 'vsAI.description'
   | 'twoPlayers.title' | 'twoPlayers.subtitle' | 'twoPlayers.description'
   | 'classic.title' | 'classic.subtitle' | 'classic.description'
@@ -715,6 +775,6 @@ export type NestedTranslationKey =
   | 'difficulties.challenger.title' | 'difficulties.challenger.subtitle' | 'difficulties.challenger.description'
   | 'difficulties.troll.title' | 'difficulties.troll.subtitle' | 'difficulties.troll.description'
   | 'languages.pt' | 'languages.en' | 'languages.es' | 'languages.fr'
-  | 'gameStatus.win' | 'gameStatus.lose' | 'gameStatus.draw' 
+  | 'gameStatus.win' | 'gameStatus.lose' | 'gameStatus.draw'
   | 'gameStatus.aiWin' | 'gameStatus.aiLose'
   | 'gameStatus.playerXWin' | 'gameStatus.playerOWin';

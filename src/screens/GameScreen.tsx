@@ -22,12 +22,13 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { RootStackParamList, GameMode, Difficulty, OpponentType, Player } from '../types/game';
+import { RootStackParamList, GameMode, Difficulty, OpponentType, Player, BlitzGameState, GravityGameState } from '../types/game';
 import { useGame } from '../contexts/GameContext';
 import { useI18n } from '../i18n/useI18n';
+import BlitzTimer from '../components/BlitzTimer';
+import BlitzTimePicker from '../components/BlitzTimePicker';
 import AppHeader from '../components/AppHeader';
 import GameBoard from '../components/GameBoard';
-import GravityBoard from '../components/GravityBoard';
 import BigBoard from '../components/BigBoard';
 import BlindBoard from '../components/BlindBoard';
 import GameScore from '../components/GameScore';
@@ -48,6 +49,8 @@ import { PeerMessage, MovePayload, RoomInfo } from '../types/online';
 import { useTheme } from '../hooks/useTheme';
 import MysticBackground from '../components/MysticBackground';
 import OnlineGameEndModal from '../components/OnlineGameEndModal';
+import RemoveAdsButton from '../components/RemoveAdsButton';
+import adMobService from '../services/adMobService';
 
 type GameScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Game'>;
 type GameScreenRouteProp = RouteProp<RootStackParamList, 'Game'>;
@@ -79,6 +82,10 @@ const GameScreen: React.FC = () => {
     makeAIMove,
     trollMessage,
     clearTrollMessage,
+    handleBlitzTimeout,
+    setBlitzTime,
+    triggerEarthquake,
+    completeGravityFall,
   } = useGame();
 
   const { theme } = useTheme();
@@ -91,6 +98,10 @@ const GameScreen: React.FC = () => {
   const [gameStatsUpdated, setGameStatsUpdated] = useState(false);
   const gameEndProcessedRef = useRef(false);
 
+  // Blitz mode state
+  const [showBlitzTimePicker, setShowBlitzTimePicker] = useState(mode === 'blitz');
+  const blitzTimePickerShownRef = useRef(false);
+
   // Online State
   // playerSymbol determines if I am X (start first) or O
   // Default: Host is X, Guest is O. But lottery can change this.
@@ -98,6 +109,7 @@ const GameScreen: React.FC = () => {
   const [opponentWantsRematch, setOpponentWantsRematch] = useState(false);
   const [iWantRematch, setIWantRematch] = useState(false);
   const turnDeterminedRef = useRef(false);
+  const isRestartingRef = useRef(false); // Flag to prevent duplicate restart processing
   const [connectionStatus, setConnectionStatus] = useState<any>(
     firebaseService.getConnectionStatus()
   ); // Using any to avoid importing ConnectionStatus type if not already imported or conflict
@@ -140,8 +152,14 @@ const GameScreen: React.FC = () => {
   // Show modal when game ends
   useEffect(() => {
     const isGameOver = gameState.winner || (gameState as any).isDraw;
+    // Check for Blitz timeout using both route mode and game state
+    const blitzState = gameState as BlitzGameState;
+    const isBlitzTimeout = mode === 'blitz' && blitzState.timedOut === true;
 
-    if (isGameOver && gameState.moveCount > 0 && !gameEndProcessedRef.current) {
+    // Allow modal to show even with 0 moves if it's a Blitz timeout
+    const shouldShowModal = isGameOver && (gameState.moveCount > 0 || isBlitzTimeout);
+
+    if (shouldShowModal && !gameEndProcessedRef.current) {
       gameEndProcessedRef.current = true;
 
       // Determine sound to play
@@ -174,33 +192,47 @@ const GameScreen: React.FC = () => {
 
       return () => clearTimeout(modalTimeout);
     }
-  }, [gameState.winner, (gameState as any).isDraw, gameState.moveCount, opponent, playSound, triggerHaptics]);
+  }, [gameState.winner, (gameState as any).isDraw, gameState.moveCount, opponent, playSound, triggerHaptics, mode, (gameState as BlitzGameState).timedOut]);
 
 
   // Reset animations and stats when game starts fresh
   useEffect(() => {
-    const isGameReset = !gameState.winner && !(gameState as any).isDraw && gameState.moveCount === 0;
+    const blitzState = gameState as BlitzGameState;
+    const isBlitzTimedOut = mode === 'blitz' && blitzState.timedOut === true;
+
+    // Don't consider game reset if blitz timeout is still active (wait for proper restart)
+    const isGameReset = !gameState.winner && !(gameState as any).isDraw && gameState.moveCount === 0 && !isBlitzTimedOut;
 
     if (isGameReset && (!showGameEndModal && !showOnlineEndModal)) {
       // Only reset if modal is already closed
       setGameStatsUpdated(false);
       setShowVictoryAnimation(false);
       gameEndProcessedRef.current = false;
+      isRestartingRef.current = false; // Reset restarting flag
       // Reset rematch states
       setOpponentWantsRematch(false);
       setIWantRematch(false);
     }
-  }, [gameState.winner, (gameState as any).isDraw, gameState.moveCount, showGameEndModal, showOnlineEndModal]);
 
-  // Update game statistics when game ends
+  }, [gameState.winner, (gameState as any).isDraw, gameState.moveCount, showGameEndModal, showOnlineEndModal, mode, (gameState as BlitzGameState).timedOut]);
+
+  // Update game statistics when game ends and trigger interstitial ad
   useEffect(() => {
     if ((gameState.winner || (gameState as any).isDraw) && !gameStatsUpdated) {
 
       // Update stats only once when game ends
       updateGameStats(gameState.winner, (gameState as any).isDraw);
       setGameStatsUpdated(true);
+
+      // Trigger interstitial ad check (shows ad every 3 games if not subscribed)
+      // Only for offline/AI games - not for online to avoid interrupting the experience
+      if (opponent !== 'online') {
+        adMobService.onGameComplete().catch((error) => {
+          console.log('📢 Interstitial not shown:', error);
+        });
+      }
     }
-  }, [gameState.winner, (gameState as any).isDraw, gameStatsUpdated, gameMode, updateGameStats]);
+  }, [gameState.winner, (gameState as any).isDraw, gameStatsUpdated, gameMode, updateGameStats, opponent]);
 
   // Refs to hold latest function versions to avoid dependency changes
   const makeMoveRef = useRef(makeMove);
@@ -238,18 +270,41 @@ const GameScreen: React.FC = () => {
         }
 
         // Auto-restart check for Host
-        // Auto-restart check for Host
         if (room.host.wantRematch && room.guest?.wantRematch) {
-          console.log('✅ Both players confirmed rematch in DB. Restarting...');
+          // Skip if already restarting (prevents duplicate processing)
+          if (isRestartingRef.current) {
+            console.log('⏳ Already processing restart, skipping...');
+            return;
+          }
 
           // Only proceed if game is actually ended (prevent loop if room update comes late)
-          if (!gameEndProcessedRef.current) return;
+          if (!gameEndProcessedRef.current) {
+            console.log('⚠️ Game not ended yet, skipping restart check');
+            return;
+          }
 
+          console.log('✅ Both players confirmed rematch in DB. Restarting...');
+          isRestartingRef.current = true;
+
+          // Send restart message to guest
           firebaseService.sendMessage({ type: 'restart' });
-          firebaseService.updateRematchStatus(false);
+
+          // Reset rematch status for BOTH players atomically (Host only)
+          firebaseService.resetBothPlayersRematchStatus();
+
+          // Close modals and reset UI states
           setShowOnlineEndModal(false);
           setShowGameEndModal(false);
+          setOpponentWantsRematch(false);
+          setIWantRematch(false);
+
+          // Restart the game
           restartGameRef.current();
+
+          // Reset the restarting flag after a short delay
+          setTimeout(() => {
+            isRestartingRef.current = false;
+          }, 500);
         }
       } else {
         // Guest watches Host
@@ -276,13 +331,30 @@ const GameScreen: React.FC = () => {
         playSound('click');
         triggerHaptics('light');
       } else if (message.type === 'restart') {
+        // Skip if already restarting (prevents duplicate processing)
+        if (isRestartingRef.current) {
+          console.log('⏳ Already processing restart message, skipping...');
+          return;
+        }
+
         console.log('🔄 Opponent requested restart (or Host confirmed)');
+        isRestartingRef.current = true;
+
         // Clear my rematch status in DB
         firebaseService.updateRematchStatus(false);
-        // Close modals explicitly
+
+        // Close modals explicitly and reset states
         setShowOnlineEndModal(false);
         setShowGameEndModal(false);
+        setOpponentWantsRematch(false);
+        setIWantRematch(false);
+
         restartGameRef.current();
+
+        // Reset the restarting flag after a short delay
+        setTimeout(() => {
+          isRestartingRef.current = false;
+        }, 500);
       } else if (message.type === 'leave') {
         console.log('🚪 Opponent left');
         Alert.alert('Oponente Saiu', 'O oponente saiu da partida', [
@@ -441,16 +513,42 @@ const GameScreen: React.FC = () => {
     await triggerHaptics('heavy');
     await playSound('button');
 
-    restartGame();
     if (opponent === 'online') {
+      // Skip if already restarting
+      if (isRestartingRef.current) {
+        console.log('⏳ Already processing restart, ignoring menu restart...');
+        return;
+      }
+
+      isRestartingRef.current = true;
+
       // If host restarts manually mid-game
       firebaseService.sendMessage({ type: 'restart' });
+      // Reset rematch statuses for both players
+      firebaseService.resetBothPlayersRematchStatus();
+
+      // Reset local rematch states
+      setOpponentWantsRematch(false);
+      setIWantRematch(false);
+
+      // Reset the flag after a delay
+      setTimeout(() => {
+        isRestartingRef.current = false;
+      }, 500);
     }
+
+    restartGame();
     setShowMenu(false);
     menuScale.value = withTiming(0, { duration: 200 });
   };
 
   const handleOnlinePlayAgain = () => {
+    // Skip if already restarting
+    if (isRestartingRef.current) {
+      console.log('⏳ Already processing restart, ignoring click...');
+      return;
+    }
+
     setIWantRematch(true);
     // Update DB status
     firebaseService.updateRematchStatus(true);
@@ -458,11 +556,23 @@ const GameScreen: React.FC = () => {
     // If I am host and opponent already wants rematch (checked via DB/State), start immediately
     if (isHost && opponentWantsRematch) {
       console.log('✅ Both players want rematch (Host clicked last), restarting...');
+      isRestartingRef.current = true;
+
       firebaseService.sendMessage({ type: 'restart' });
-      // Clear my status
-      firebaseService.updateRematchStatus(false);
+      // Clear BOTH players' rematch status atomically
+      firebaseService.resetBothPlayersRematchStatus();
+
+      // Reset states
       setShowOnlineEndModal(false);
+      setOpponentWantsRematch(false);
+      setIWantRematch(false);
+
       restartGame();
+
+      // Reset the restarting flag after a short delay
+      setTimeout(() => {
+        isRestartingRef.current = false;
+      }, 500);
     }
   };
 
@@ -472,13 +582,15 @@ const GameScreen: React.FC = () => {
   };
 
   const getGameModeTitle = (mode: GameMode, opponent: OpponentType): string => {
-    const modeTitles = {
+    const modeTitles: Record<GameMode, string> = {
       classic: 'Clássico',
       infinity: 'Infinito',
       gravity: 'Gravity 🪐',
       blind: 'Cego 🙈',
       bigBoard: 'Grande 🏟️',
       survival: 'Sobrevivência ❤️',
+      blitz: 'Blitz ⚡',
+      reverse: 'Reverso 🔄',
     };
 
     const modeTitle = modeTitles[mode] || 'Modo Desconhecido';
@@ -557,10 +669,18 @@ const GameScreen: React.FC = () => {
           </Animated.View>
         )}
 
-
-
-
-
+        {/* Blitz Timer - only show in blitz mode */}
+        {gameMode === 'blitz' && !showBlitzTimePicker && (
+          <Animated.View entering={FadeInUp.delay(300).duration(600)}>
+            <BlitzTimer
+              gameState={gameState as BlitzGameState}
+              currentPlayer={gameState.currentPlayer}
+              isGameOver={!!gameState.winner || !!(gameState as any).isDraw}
+              onTimeout={handleBlitzTimeout}
+              isPaused={opponent === 'ai' && gameState.currentPlayer === 'O'}
+            />
+          </Animated.View>
+        )}
 
         {/* Game Board */}
         <Animated.View
@@ -568,12 +688,15 @@ const GameScreen: React.FC = () => {
           style={styles.boardContainer}
         >
           {gameMode === 'gravity' ? (
-            <GravityBoard
+            <GameBoard
               board={gameState.board}
-              onColumnPress={handleColumnPress}
+              onCellPress={handleCellPress}
               winningLine={winningLine}
               moves={gameState.moves}
+              isInfinityMode={false}
               disabled={!!gameState.winner || (gameState as any).isDraw || isAIThinking || (opponent === 'ai' && gameState.currentPlayer === 'O')}
+              pendingFall={(gameState as GravityGameState).pendingFall}
+              onGravityFallComplete={completeGravityFall}
             />
           ) : gameMode === 'bigBoard' ? (
             <BigBoard
@@ -743,6 +866,20 @@ const GameScreen: React.FC = () => {
           onPlayAgain={handleOnlinePlayAgain}
           onExit={handleOnlineExit}
         />
+
+        {/* Blitz Time Picker Modal */}
+        <BlitzTimePicker
+          visible={showBlitzTimePicker}
+          currentTime={(gameState as BlitzGameState).timePerMove || 3}
+          onSelectTime={(seconds) => {
+            setBlitzTime(seconds);
+            setShowBlitzTimePicker(false);
+          }}
+          onClose={() => setShowBlitzTimePicker(false)}
+        />
+
+        {/* Remove Ads Floating Button - visible during game */}
+        <RemoveAdsButton variant="floating" />
 
       </SafeAreaView>
     </LinearGradient>

@@ -125,8 +125,9 @@ class FirebaseService {
 
     /**
      * Entra em uma sala existente (GUEST)
+     * Retorna os dados da sala para que o Guest use o modo de jogo correto
      */
-    async joinRoom(roomId: string, guestName: string): Promise<void> {
+    async joinRoom(roomId: string, guestName: string): Promise<RoomInfo> {
         if (!this.currentUserId) {
             throw new Error('User not authenticated');
         }
@@ -167,7 +168,7 @@ class FirebaseService {
                 guest: guestData,
             });
 
-            console.log(`🎮 Joined room: ${this.currentRoomId}`);
+            console.log(`🎮 Joined room: ${this.currentRoomId} (Mode: ${roomData.mode})`);
             this.updateConnectionStatus('connected');
 
             // Escutar mudanças na sala
@@ -180,6 +181,9 @@ class FirebaseService {
                     playerName: guestName,
                 } as JoinPayload,
             });
+
+            // Retornar dados da sala para o Guest usar o modo correto
+            return roomData;
         } catch (error) {
             console.error('❌ Failed to join room:', error);
             this.updateConnectionStatus('error');
@@ -284,6 +288,21 @@ class FirebaseService {
         if (wanted) {
             this.sendMessage({ type: 'rematch_request' });
         }
+    }
+
+    /**
+     * Reseta o status de rematch de AMBOS os jogadores (apenas Host deve usar)
+     * Isso é usado para garantir que ambos os flags são resetados atomicamente
+     */
+    async resetBothPlayersRematchStatus(): Promise<void> {
+        if (!this.currentRoomId || this.role !== 'host') return;
+
+        const updates: any = {};
+        updates[`rooms/${this.currentRoomId}/host/wantRematch`] = false;
+        updates[`rooms/${this.currentRoomId}/guest/wantRematch`] = false;
+
+        await update(ref(database), updates);
+        console.log('🔄 Reset rematch status for both players');
     }
 
     /**

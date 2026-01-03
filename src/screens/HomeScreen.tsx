@@ -13,9 +13,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, { 
-  FadeInUp, 
-  FadeInDown, 
+import Animated, {
+  FadeInUp,
+  FadeInDown,
   useSharedValue,
   useAnimatedStyle,
   withSpring,
@@ -28,14 +28,16 @@ import { useTheme } from '../hooks/useTheme';
 import { useI18n } from '../i18n/useI18n';
 import GameLogo from '../components/GameLogo';
 import CustomButton from '../components/CustomButton';
-import { 
-  COLORS, 
-  SPACING, 
-  BORDER_RADIUS, 
+import RemoveAdsButton from '../components/RemoveAdsButton';
+import {
+  COLORS,
+  SPACING,
+  BORDER_RADIUS,
   SHADOWS,
   createTextStyle,
   DIMENSIONS,
 } from '../utils/theme';
+import AdBanner from '../components/AdBanner';
 
 type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Home'>;
 
@@ -82,6 +84,22 @@ const getGameModes = (t: any): GameModeOption[] => [
     description: t('blind.description'),
   },
   {
+    id: 'blitz',
+    title: `${t('blitz.title')} ⚡`,
+    subtitle: t('blitz.subtitle'),
+    icon: 'timer-outline',
+    color: COLORS.warning,
+    description: t('blitz.description'),
+  },
+  {
+    id: 'reverse',
+    title: `${t('reverse.title')} 🔄`,
+    subtitle: t('reverse.subtitle'),
+    icon: 'swap-horizontal-outline',
+    color: COLORS.oColor,
+    description: t('reverse.description'),
+  },
+  {
     id: 'bigBoard',
     title: `${t('bigBoard.title')} 🏟️`,
     subtitle: t('bigBoard.subtitle'),
@@ -105,16 +123,16 @@ const HomeScreen: React.FC = () => {
   const { theme, colors } = useTheme();
   const { t } = useI18n();
   const buttonScale = useSharedValue(1);
-  
+
   // Filtrar modos ocultos (bigBoard e survival)
-  const gameModes = getGameModes(t).filter(mode => 
+  const gameModes = getGameModes(t).filter(mode =>
     mode.id !== 'bigBoard' && mode.id !== 'survival'
   );
 
   const handleGameModePress = async (mode: GameMode) => {
     await triggerHaptics('medium');
     await playSound('button');
-    
+
     // Navigate to opponent selection screen
     navigation.navigate('Opponent', { mode });
   };
@@ -144,14 +162,14 @@ const HomeScreen: React.FC = () => {
   };
 
   return (
-    <LinearGradient colors={colors.gradient} style={styles.container}>
-      <StatusBar 
-        barStyle={theme === 'dark' ? 'light-content' : 'dark-content'} 
-        backgroundColor={colors.background} 
+    <LinearGradient colors={(colors.gradient?.length >= 2 ? colors.gradient : ['#0A0A0A', '#1A1A2E']) as unknown as readonly [string, string, ...string[]]} style={styles.container}>
+      <StatusBar
+        barStyle={theme === 'dark' ? 'light-content' : 'dark-content'}
+        backgroundColor={colors.background}
       />
       <SafeAreaView style={styles.safeArea}>
-        
-        {/* Header with Settings and Stats */}
+
+        {/* Header with Settings, Stats and Remove Ads */}
         <View style={styles.header}>
           <TouchableOpacity
             onPress={handleSettingsPress}
@@ -160,7 +178,10 @@ const HomeScreen: React.FC = () => {
           >
             <Ionicons name="settings-outline" size={24} color={COLORS.white} />
           </TouchableOpacity>
-          
+
+          {/* Remove Ads Button - prominently displayed */}
+          <RemoveAdsButton variant="inline" />
+
           <TouchableOpacity
             onPress={handleStatsPress}
             style={styles.headerButton}
@@ -175,7 +196,7 @@ const HomeScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
 
-        <ScrollView 
+        <ScrollView
           style={styles.scrollContainer}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
@@ -188,7 +209,7 @@ const HomeScreen: React.FC = () => {
           {/* Game Modes Section */}
           <Animated.View entering={FadeInDown.delay(500).duration(800)} style={styles.gameModesSection}>
             <Text style={styles.sectionTitle}>{t('chooseGameMode')}</Text>
-            
+
             <View style={styles.gameModesGrid}>
               {gameModes.map((mode, index) => (
                 <Animated.View
@@ -207,7 +228,7 @@ const HomeScreen: React.FC = () => {
                       <View style={[styles.cardIconContainer, { backgroundColor: mode.color + '20' }]}>
                         <Ionicons name={mode.icon} size={24} color={mode.color} />
                       </View>
-                      
+
                       <View style={styles.cardTextContainer}>
                         <Text style={styles.cardTitle}>{mode.title}</Text>
                         <Text style={styles.cardSubtitle}>{mode.subtitle}</Text>
@@ -226,6 +247,9 @@ const HomeScreen: React.FC = () => {
           <Animated.View entering={FadeInUp.delay(1200).duration(600)} style={styles.footer}>
           </Animated.View>
         </ScrollView>
+
+        {/* Ad Banner at bottom */}
+        <AdBanner size="BANNER" style={styles.adBanner} />
       </SafeAreaView>
     </LinearGradient>
   );
@@ -358,6 +382,10 @@ const styles = StyleSheet.create({
     ...createTextStyle('sm', 'medium'),
     color: COLORS.gray,
     textAlign: 'center',
+  },
+  adBanner: {
+    paddingVertical: SPACING.sm,
+    backgroundColor: 'transparent',
   },
 });
 

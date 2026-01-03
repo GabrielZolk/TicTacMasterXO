@@ -31,6 +31,7 @@ interface GameCellProps {
   isWinning?: boolean;
   disabled?: boolean;
   winningLine?: WinningLine | null;
+  isHiddenForAnimation?: boolean; // Hide piece during gravity fall animation
 }
 
 const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
@@ -43,6 +44,7 @@ const GameCell: React.FC<GameCellProps> = ({
   isWinning = false,
   disabled = false,
   winningLine,
+  isHiddenForAnimation = false,
 }) => {
   const { theme } = useTheme();
   const scale = useSharedValue(1);
@@ -165,8 +167,8 @@ const GameCell: React.FC<GameCellProps> = ({
       activeOpacity={0.8}
       style={[styles.cell, cellAnimatedStyle]}
     >
-      {/* Game piece */}
-      {value && (
+      {/* Game piece - hidden during gravity fall animation */}
+      {value && !isHiddenForAnimation && (
         <Animated.View style={pieceAnimatedStyle}>
           <Text
             style={[

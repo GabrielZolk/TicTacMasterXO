@@ -155,8 +155,8 @@ const OnlineWaitingRoomScreen: React.FC = () => {
 
     // Start game when both players are ready
     useEffect(() => {
-        console.log('🎮 Game start check:', { isReady, opponentReady, connectionStatus, isHost });
-        if (isReady && opponentReady && connectionStatus === 'connected') {
+        console.log('🎮 Game start check:', { isReady, opponentReady, connectionStatus, isHost, opponentName });
+        if (isReady && opponentReady && connectionStatus === 'connected' && opponentName) {
             console.log('🚀 Starting game for', isHost ? 'HOST' : 'GUEST');
             // Small delay for better UX
             setTimeout(() => {
@@ -170,7 +170,7 @@ const OnlineWaitingRoomScreen: React.FC = () => {
                 });
             }, 1000);
         }
-    }, [isReady, opponentReady, connectionStatus, isHost, mode, roomCode, playerName, navigation]);
+    }, [isReady, opponentReady, connectionStatus, isHost, mode, roomCode, playerName, navigation, opponentName]);
 
     const handleReady = () => {
         if (!opponentName) {
@@ -221,6 +221,21 @@ const OnlineWaitingRoomScreen: React.FC = () => {
         );
     };
 
+    // Função para obter o nome do modo em português
+    const getModeName = (gameMode: string): string => {
+        const modeNames: Record<string, string> = {
+            classic: '🎯 Clássico',
+            infinity: '♾️ Infinito',
+            gravity: '🪐 Gravity',
+            blind: '🙈 Cego',
+            bigBoard: '🏟️ Grande',
+            survival: '❤️ Sobrevivência',
+            blitz: '⚡ Blitz',
+            reverse: '🔄 Reverso',
+        };
+        return modeNames[gameMode] || gameMode;
+    };
+
     return (
         <LinearGradient colors={COLORS.primaryGradient as any} style={styles.container}>
             <StatusBar barStyle="light-content" backgroundColor={COLORS.darkBackground} />
@@ -247,6 +262,12 @@ const OnlineWaitingRoomScreen: React.FC = () => {
                         <Text style={styles.codeLabel}>Código da Sala</Text>
                         <View style={styles.codeBox}>
                             <Text style={styles.codeText}>{roomCode}</Text>
+                        </View>
+
+                        {/* Game Mode Badge */}
+                        <View style={styles.modeBadge}>
+                            <Ionicons name="game-controller-outline" size={16} color={COLORS.info} />
+                            <Text style={styles.modeBadgeText}>Modo: {getModeName(mode)}</Text>
                         </View>
 
                         {isHost && (
@@ -389,6 +410,22 @@ const styles = StyleSheet.create({
         ...createTextStyle('xxxl', 'extrabold'),
         color: COLORS.success,
         letterSpacing: 4,
+    },
+    modeBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: COLORS.info + '20',
+        paddingHorizontal: SPACING.md,
+        paddingVertical: SPACING.xs,
+        borderRadius: BORDER_RADIUS.md,
+        marginTop: SPACING.md,
+        gap: SPACING.xs,
+        borderWidth: 1,
+        borderColor: COLORS.info + '40',
+    },
+    modeBadgeText: {
+        ...createTextStyle('sm', 'semibold'),
+        color: COLORS.info,
     },
     shareButtons: {
         flexDirection: 'row',

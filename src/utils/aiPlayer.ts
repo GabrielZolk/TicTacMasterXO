@@ -11,7 +11,7 @@ export class AIPlayer {
   private aiPlayer: Player = 'O';
   private humanPlayer: Player = 'X';
 
-  constructor(difficulty: Difficulty = 'medium') {
+  constructor(difficulty: Difficulty = 'mediano') {
     this.difficulty = difficulty;
   }
 
@@ -24,12 +24,18 @@ export class AIPlayer {
     board: Cell[][],
     isInfinityMode: boolean = false,
     moves: GameMove[] = [],
-    maxPieces: number = 6
+    maxPieces: number = 6,
+    isReverseMode: boolean = false
   ): AIMove | null {
     const emptyCells = this.getEmptyCells(board);
-    
+
     if (emptyCells.length === 0) {
       return null;
+    }
+
+    // In Reverse mode, AI should try to LOSE (make opponent create 3 in a line)
+    if (isReverseMode) {
+      return this.getReverseMove(board, emptyCells);
     }
 
     switch (this.difficulty) {
@@ -46,6 +52,62 @@ export class AIPlayer {
       default:
         return this.getMedianoMove(board, emptyCells, isInfinityMode, moves, maxPieces);
     }
+  }
+
+  // Reverse mode AI: Tries to LOSE by forcing opponent to create 3 in a line
+  private getReverseMove(board: Cell[][], emptyCells: AIMove[]): AIMove {
+    // In Reverse mode, the AI wants to:
+    // 1. AVOID making 3 in a line (that would make AI lose in reverse mode)
+    // 2. Try to FORCE the opponent to make 3 in a line
+
+    // First, filter out moves that would make AI create 3 in line (avoid losing)
+    const safeMoves = emptyCells.filter(move => {
+      const testBoard = board.map(row => [...row]);
+      testBoard[move.row][move.col] = this.aiPlayer;
+      return this.checkWinner(testBoard) !== this.aiPlayer;
+    });
+
+    // If no safe moves, we have to make a "losing" move (which wins in normal game)
+    const movesToConsider = safeMoves.length > 0 ? safeMoves : emptyCells;
+
+    // Try to force opponent into a position where they MUST create 3 in line
+    // Look for moves that set up a "fork" against the opponent
+    for (const move of movesToConsider) {
+      const testBoard = board.map(row => [...row]);
+      testBoard[move.row][move.col] = this.aiPlayer;
+
+      // Count how many winning opportunities this creates for the opponent
+      let opponentWinningMoves = 0;
+      for (let r = 0; r < 3; r++) {
+        for (let c = 0; c < 3; c++) {
+          if (testBoard[r][c] === null) {
+            testBoard[r][c] = this.humanPlayer;
+            if (this.checkWinner(testBoard) === this.humanPlayer) {
+              opponentWinningMoves++;
+            }
+            testBoard[r][c] = null;
+          }
+        }
+      }
+
+      // If this move creates 2+ winning opportunities for opponent, it's great!
+      if (opponentWinningMoves >= 2) {
+        console.log(`🔄 Reverse AI: Found trap! Move (${move.row}, ${move.col}) creates ${opponentWinningMoves} winning threats for opponent`);
+        return move;
+      }
+    }
+
+    // Try to avoid center and corners in early game (those are strategic)
+    // Prefer edge positions to give opponent more control
+    const edges = movesToConsider.filter(
+      m => (m.row === 1 && m.col !== 1) || (m.col === 1 && m.row !== 1)
+    );
+    if (edges.length > 0 && Math.random() < 0.6) {
+      return edges[Math.floor(Math.random() * edges.length)];
+    }
+
+    // Otherwise, random safe move
+    return movesToConsider[Math.floor(Math.random() * movesToConsider.length)];
   }
 
   // Noob AI: Mostly random, occasionally blocks or wins by accident
@@ -230,10 +292,10 @@ export class AIPlayer {
   private sendTrollMessage(type: 'win' | 'block' | 'taunt') {
     const messages = this.trollMessages[type];
     const message = messages[Math.floor(Math.random() * messages.length)];
-    
+
     // This will be handled by the game context
     console.log(`🤖 Troll AI: ${message}`);
-    
+
     // We could emit an event here or call a callback to show the message in the UI
     if (this.onTrollMessage) {
       this.onTrollMessage(message);
@@ -257,48 +319,48 @@ export class AIPlayer {
     maxDepth: number = 6
   ): number {
     const winner = this.checkWinner(board);
-    
+
     if (winner === this.aiPlayer) return 10 - depth;
     if (winner === this.humanPlayer) return depth - 10;
     if (this.isBoardFull(board) || depth >= maxDepth) return 0;
 
     if (isMaximizing) {
       let maxScore = -Infinity;
-      
+
       for (let row = 0; row < 3; row++) {
         for (let col = 0; col < 3; col++) {
           if (board[row][col] === null) {
             board[row][col] = this.aiPlayer;
             const score = this.minimax(board, depth + 1, false, alpha, beta, maxDepth);
             board[row][col] = null;
-            
+
             maxScore = Math.max(score, maxScore);
             alpha = Math.max(alpha, score);
-            
+
             if (beta <= alpha) break;
           }
         }
       }
-      
+
       return maxScore;
     } else {
       let minScore = Infinity;
-      
+
       for (let row = 0; row < 3; row++) {
         for (let col = 0; col < 3; col++) {
           if (board[row][col] === null) {
             board[row][col] = this.humanPlayer;
             const score = this.minimax(board, depth + 1, true, alpha, beta, maxDepth);
             board[row][col] = null;
-            
+
             minScore = Math.min(score, minScore);
             beta = Math.min(beta, score);
-            
+
             if (beta <= alpha) break;
           }
         }
       }
-      
+
       return minScore;
     }
   }
@@ -337,7 +399,7 @@ export class AIPlayer {
     if (moves.length >= maxPieces - 1) {
       const oldestMove = moves[0];
       const simulatedBoard = this.simulateBoardAfterRemoval(board, oldestMove);
-      
+
       // Check if removing the oldest piece creates a winning opportunity
       const winAfterRemoval = this.findWinningMove(simulatedBoard, this.aiPlayer);
       if (winAfterRemoval && this.isValidMove(winAfterRemoval, board)) {
@@ -362,12 +424,12 @@ export class AIPlayer {
       // Simulate the move
       const newBoard = board.map(row => [...row]);
       newBoard[move.row][move.col] = this.aiPlayer;
-      
+
       let score = this.evaluateInfinityPosition(newBoard, moves, maxPieces, move);
-      
+
       // Add some randomness to avoid predictable play
       score += (Math.random() - 0.5) * 0.1;
-      
+
       if (score > bestScore) {
         bestScore = score;
         bestMove = move;
@@ -518,14 +580,14 @@ export class AIPlayer {
   }
 
   private isValidMove(move: AIMove, board: Cell[][]): boolean {
-    return move.row >= 0 && move.row < 3 && move.col >= 0 && move.col < 3 && 
-           board[move.row][move.col] === null;
+    return move.row >= 0 && move.row < 3 && move.col >= 0 && move.col < 3 &&
+      board[move.row][move.col] === null;
   }
 
   // Simulate AI thinking time for better UX
   async simulateThinking(): Promise<void> {
     let baseTime: number;
-    
+
     switch (this.difficulty) {
       case 'noob':
         baseTime = 200;
@@ -545,7 +607,7 @@ export class AIPlayer {
       default:
         baseTime = 400;
     }
-    
+
     return new Promise(resolve => {
       setTimeout(resolve, baseTime + Math.random() * 400);
     });

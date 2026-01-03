@@ -18,7 +18,7 @@ export interface GameState {
   moveCount: number;
 }
 
-export type GameMode = 'classic' | 'infinity' | 'gravity' | 'blind' | 'bigBoard' | 'survival';
+export type GameMode = 'classic' | 'infinity' | 'gravity' | 'blind' | 'bigBoard' | 'survival' | 'blitz' | 'reverse';
 export type OpponentType = 'ai' | 'human' | 'online';
 
 export interface PlayerStats {
@@ -67,8 +67,17 @@ export interface InfinityGameState extends Omit<GameState, 'isDraw'> {
   nextToRemove?: GameMove;
 }
 
+export interface GravityFallAnimation {
+  player: Player;
+  col: number;
+  startRow: number;
+  endRow: number;
+  isAnimating: boolean;
+}
+
 export interface GravityGameState extends GameState {
-  // Gravity mode uses standard GameState but with special move logic
+  // Gravity mode: piece appears where clicked, then may randomly fall with animation
+  pendingFall?: GravityFallAnimation;
 }
 
 
@@ -91,6 +100,18 @@ export interface SurvivalGameState extends GameState {
   consecutiveWins: number;
 }
 
+export interface BlitzGameState extends GameState {
+  timePerMove: number; // seconds (1-5)
+  currentTurnStartTime: number; // timestamp when current turn started
+  timeRemaining: number; // seconds remaining for current turn
+  timedOut: boolean; // true if a player ran out of time
+  timedOutPlayer: Player | null; // which player timed out
+}
+
+export interface ReverseGameState extends GameState {
+  // Reverse mode: whoever makes 3 in a line LOSES
+  // Uses standard GameState but with inverted win logic
+}
 
 export type ExtendedGameState =
   | GameState
@@ -98,7 +119,9 @@ export type ExtendedGameState =
   | GravityGameState
   | BlindGameState
   | BigBoardGameState
-  | SurvivalGameState;
+  | SurvivalGameState
+  | BlitzGameState
+  | ReverseGameState;
 
 // Tipos para navegação
 export type RootStackParamList = {
@@ -129,4 +152,5 @@ export type RootStackParamList = {
   Settings: undefined;
   Statistics: undefined;
   Theme: undefined;
+  RemoveAds: undefined;
 };
