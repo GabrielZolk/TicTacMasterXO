@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,9 +8,10 @@ import {
   TouchableOpacity,
   ScrollView,
   Dimensions,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 
@@ -19,10 +20,11 @@ import { useTheme } from '../hooks/useTheme';
 import { useI18n } from '../i18n/useI18n';
 import { ThemeType } from '../types/game';
 import AppHeader from '../components/AppHeader';
-import { 
-  COLORS, 
-  SPACING, 
-  BORDER_RADIUS, 
+import { storeService } from '../services/storeService';
+import {
+  COLORS,
+  SPACING,
+  BORDER_RADIUS,
   SHADOWS,
   createTextStyle,
   getThemeColors,
@@ -44,6 +46,25 @@ const ThemeScreen: React.FC = () => {
   const { gameConfig, updateConfig, playSound, triggerHaptics } = useGame();
   const { theme, colors } = useTheme();
   const { t } = useI18n();
+  const [ownedThemes, setOwnedThemes] = useState<string[]>(['dark', 'light']);
+
+  // Load owned themes whenever screen gains focus
+  useFocusEffect(
+    useCallback(() => {
+      loadOwnedThemes();
+    }, [])
+  );
+
+  const loadOwnedThemes = async () => {
+    const inventory = await storeService.getInventory();
+    // Extract theme IDs from owned items (remove 'theme_' prefix)
+    const ownedIds = inventory.ownedItems
+      .filter(id => id.startsWith('theme_'))
+      .map(id => id.replace('theme_', ''));
+
+    // Always ensure defaults are owned
+    setOwnedThemes([...new Set(['dark', 'light', ...ownedIds])]);
+  };
 
   const themeOptions: ThemeOption[] = Object.entries(THEME_INFO).map(([id, info]) => ({
     id: id as ThemeType,
@@ -60,30 +81,49 @@ const ThemeScreen: React.FC = () => {
   };
 
   const handleThemeSelect = async (selectedTheme: ThemeType) => {
+    // Check ownership
+    if (!ownedThemes.includes(selectedTheme)) {
+      await triggerHaptics('heavy'); // Changed from 'error'
+      Alert.alert(
+        'Tema Bloqueado',
+        'Você precisa desbloquear este tema na loja para usá-lo.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Ir para Loja',
+            onPress: () => {
+              navigation.navigate('Store' as never);
+            }
+          }
+        ]
+      );
+      return;
+    }
+
     if (selectedTheme === gameConfig.theme) return;
-    
+
     await triggerHaptics('medium');
     await playSound('button');
     updateConfig({ theme: selectedTheme });
   };
 
   return (
-    <LinearGradient colors={colors.gradient} style={styles.container}>
-      <StatusBar 
-        barStyle={theme === 'dark' ? 'light-content' : 'dark-content'} 
-        backgroundColor={colors.background} 
+    <LinearGradient colors={colors.gradient as any} style={styles.container}>
+      <StatusBar
+        barStyle={theme === 'dark' ? 'light-content' : 'dark-content'}
+        backgroundColor={colors.background}
       />
       <SafeAreaView style={styles.safeArea}>
-        
+
         {/* Header */}
-        <AppHeader 
+        <AppHeader
           title={t('theme')}
           showBackButton={true}
           showHomeButton={true}
           onBackPress={handleGoBack}
         />
 
-        <ScrollView 
+        <ScrollView
           style={styles.scrollContainer}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
@@ -98,65 +138,82 @@ const ThemeScreen: React.FC = () => {
 
           {/* Theme Grid */}
           <View style={styles.themesGrid}>
-            {themeOptions.map((option, index) => (
-              <Animated.View
-                key={option.id}
-                entering={FadeInUp.delay(300 + index * 100).duration(500)}
-                style={styles.themeWrapper}
-              >
-                <TouchableOpacity
-                  onPress={() => handleThemeSelect(option.id)}
-                  activeOpacity={0.8}
-                  style={[
-                    styles.themeCard,
-                    { backgroundColor: colors.secondary },
-                    gameConfig.theme === option.id && [
-                      styles.selectedTheme, 
-                      { borderColor: colors.text }
-                    ]
-                  ]}
+            {themeOptions.map((option, index) => {
+              const isOwned = ownedThemes.includes(option.id);
+              return (
+                <Animated.View
+                  key={option.id}
+                  entering={FadeInUp.delay(300 + index * 100).duration(500)}
+                  style={styles.themeWrapper}
                 >
-                  {/* Theme Preview */}
-                  <LinearGradient
-                    colors={option.colors.gradient}
-                    style={styles.themePreview}
+                  <TouchableOpacity
+                    onPress={() => handleThemeSelect(option.id)}
+                    activeOpacity={0.8}
+                    style={[
+                      styles.themeCard,
+                      { backgroundColor: colors.secondary },
+                      gameConfig.theme === option.id && [
+                        styles.selectedTheme,
+                        { borderColor: colors.text }
+                      ],
+                      !isOwned && { opacity: 0.7 }
+                    ]}
                   >
-                    <View style={styles.previewContent}>
-                      <Text style={styles.themeEmoji}>{option.emoji}</Text>
-                    </View>
-                  </LinearGradient>
+                    {/* Theme Preview */}
+                    <LinearGradient
+                      colors={option.colors.gradient as any}
+                      style={styles.themePreview}
+                    >
+                      <View style={styles.previewContent}>
+                        <Text style={styles.themeEmoji}>{option.emoji}</Text>
 
-                  {/* Theme Info */}
-                  <View style={styles.themeInfo}>
-                    <Text style={[styles.themeName, { color: colors.text }]}>
-                      {option.name}
-                    </Text>
-                    <Text style={[styles.themeDescription, { color: colors.textSecondary }]}>
-                      {option.description}
-                    </Text>
-                  </View>
+                        {!isOwned && (
+                          <View style={styles.lockOverlay}>
+                            <Ionicons name="lock-closed" size={24} color="#FFF" />
+                          </View>
+                        )}
+                      </View>
+                    </LinearGradient>
 
-                  {/* Selection Indicator */}
-                  {gameConfig.theme === option.id && (
-                    <View style={[styles.selectedIndicator, { backgroundColor: colors.text }]}>
-                      <Ionicons name="checkmark" size={16} color={colors.background} />
+                    {/* Theme Info */}
+                    <View style={styles.themeInfo}>
+                      <Text style={[styles.themeName, { color: colors.text }]}>
+                        {option.name}
+                      </Text>
+                      <Text style={[styles.themeDescription, { color: colors.textSecondary }]}>
+                        {option.description}
+                      </Text>
                     </View>
-                  )}
-                </TouchableOpacity>
-              </Animated.View>
-            ))}
+
+                    {/* Selection Indicator */}
+                    {gameConfig.theme === option.id && (
+                      <View style={[styles.selectedIndicator, { backgroundColor: colors.text }]}>
+                        <Ionicons name="checkmark" size={16} color={colors.background} />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                </Animated.View>
+              )
+            })}
           </View>
 
           {/* Info Card */}
           <Animated.View entering={FadeInUp.delay(800).duration(600)} style={styles.infoCard}>
             <View style={[styles.infoContent, { backgroundColor: colors.secondary }]}>
-              <Ionicons name="information-circle-outline" size={24} color={COLORS.gold} />
+              <Ionicons name="storefront-outline" size={24} color={COLORS.gold} />
               <View style={styles.infoText}>
-                <Text style={[styles.infoTitle, { color: COLORS.gold }]}>Dica</Text>
+                <Text style={[styles.infoTitle, { color: COLORS.gold }]}>Quer mais temas?</Text>
                 <Text style={[styles.infoDescription, { color: colors.textSecondary }]}>
-                  Os temas alteram apenas a aparência visual. Todas as funcionalidades permanecem iguais!
+                  Visite a loja para desbloquear novos visuais incríveis!
                 </Text>
               </View>
+              <TouchableOpacity
+                onPress={() => navigation.navigate('Store' as never)}
+                style={styles.storeButton}
+              >
+                <Text style={styles.storeButtonText}>Ir para Loja</Text>
+                <Ionicons name="arrow-forward" size={16} color={colors.background} />
+              </TouchableOpacity>
             </View>
           </Animated.View>
         </ScrollView>
@@ -220,10 +277,13 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   previewContent: {
     alignItems: 'center',
     justifyContent: 'center',
+    width: '100%',
+    height: '100%',
   },
   themeEmoji: {
     fontSize: 32,
@@ -256,14 +316,14 @@ const styles = StyleSheet.create({
     ...SHADOWS.light,
   },
   infoContent: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+    flexDirection: 'column', // Changed for button below
+    alignItems: 'center',
     padding: SPACING.lg,
     borderRadius: BORDER_RADIUS.lg,
+    gap: SPACING.md,
   },
   infoText: {
-    flex: 1,
-    marginLeft: SPACING.md,
+    alignItems: 'center',
   },
   infoTitle: {
     ...createTextStyle('md', 'semibold'),
@@ -272,8 +332,31 @@ const styles = StyleSheet.create({
   infoDescription: {
     ...createTextStyle('sm', 'regular'),
     lineHeight: 18,
+    textAlign: 'center',
   },
+  lockOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  storeButton: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.gold,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.sm,
+    borderRadius: BORDER_RADIUS.round,
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  storeButtonText: {
+    ...createTextStyle('sm', 'bold'),
+    color: COLORS.darkBackground, // Ensure readability
+  }
 });
 
 export default ThemeScreen;
-

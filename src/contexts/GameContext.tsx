@@ -25,6 +25,7 @@ import {
 } from '../types/game';
 import { AIPlayer } from '../utils/aiPlayer';
 import { soundManager, SoundUtils } from '../utils/soundManager';
+import { storeService } from '../services/storeService';
 import {
   createBoard,
   createBigBoard,
@@ -846,7 +847,16 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     dispatch({ type: 'SET_CONFIG', payload: config });
   }, []);
 
-  const updateGameStats = useCallback((winner: Player | null, isDraw: boolean) => {
+  // Import storeService at the top of the file if not already imported
+  // But wait, I need to do it inside the replacement or ensure imports are there.
+  // Since replace_file_content works on chunks, I will handle the import in a separate call or assume I can't easily add imports without rewriting the top.
+  // Actually, I can use multi_replace for this.
+
+  // Let's stick to modifying updateGameStats for now, and I will add the import in a separate tool call if needed or include it if I rewrite the top.
+  // Wait, I can't use 'storeService' if I don't import it.
+  // I will use multi_replace to add the import AND update the function.
+
+  const updateGameStats = useCallback(async (winner: Player | null, isDraw: boolean) => {
     const newStats = { ...state.stats };
 
     // Handle Survival Mode
@@ -903,10 +913,37 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (newStats.currentStreak > newStats.bestStreak) {
         newStats.bestStreak = newStats.currentStreak;
       }
+
+      // REWARD INTEGRATION
+      // Only reward if playing against AI and the Human (usually X) wins
+      // Or if checking logic allows O to be human (but standard is X=Human vs AI)
+      if (state.config.opponent === 'ai' && winner === 'X') {
+        try {
+          // Calculate reward based on difficulty/mode
+          let baseReward = 5; // Default classic
+
+          // Bonus for difficulty
+          if (state.config.difficulty === 'challenger' || state.config.difficulty === 'troll') {
+            baseReward = 15;
+          } else if (state.config.difficulty === 'expert') {
+            baseReward = 10;
+          }
+
+          // Win streak bonus is handled inside rewardWin but we pass currentStreak
+          // Note: storeService.rewardWin expects (isSpecialMode: boolean, consecutiveWins)
+          const isSpecialMode = state.config.mode !== 'classic';
+          await storeService.rewardWin(isSpecialMode, newStats.currentStreak);
+
+          // We could show a toast here, but the GameEndModal might be better place for UI
+          console.log('Reward processed for win against AI');
+        } catch (err) {
+          console.error('Error processing reward:', err);
+        }
+      }
     }
 
     dispatch({ type: 'UPDATE_STATS', payload: newStats });
-  }, [state.stats, state.config.mode]);
+  }, [state.stats, state.config.mode, state.config.opponent, state.config.difficulty]);
 
   const resetStats = useCallback(async () => {
     dispatch({ type: 'RESET_STATS' });

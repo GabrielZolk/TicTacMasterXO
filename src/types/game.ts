@@ -42,7 +42,7 @@ export interface AIConfig {
   isThinking: boolean;
 }
 
-export type ThemeType = 'dark' | 'light' | 'cartoon' | 'futuristic' | 'meme' | 'neon' | 'retro' | 'nature' | 'samuel';
+export type ThemeType = 'dark' | 'light' | 'cartoon' | 'futuristic' | 'meme' | 'neon' | 'retro' | 'nature' | 'samuel' | 'matrix' | 'ocean' | 'fire_ice' | 'gold_luxury' | 'alien';
 
 export interface GameConfig {
   mode: GameMode;
@@ -153,4 +153,5 @@ export type RootStackParamList = {
   Statistics: undefined;
   Theme: undefined;
   RemoveAds: undefined;
+  Store: undefined;
 };

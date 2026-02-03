@@ -14,6 +14,7 @@ import ThemeScreen from '../screens/ThemeScreen';
 import OnlineLobbyScreen from '../screens/OnlineLobbyScreen';
 import OnlineWaitingRoomScreen from '../screens/OnlineWaitingRoomScreen';
 import RemoveAdsScreen from '../screens/RemoveAdsScreen';
+import StoreScreen from '../screens/StoreScreen';
 
 const Stack = createStackNavigator<RootStackParamList>();
 
@@ -101,6 +102,13 @@ const AppNavigator: React.FC = () => {
         <Stack.Screen
           name="RemoveAds"
           component={RemoveAdsScreen}
+          options={{
+            gestureDirection: 'horizontal',
+          }}
+        />
+        <Stack.Screen
+          name="Store"
+          component={StoreScreen}
           options={{
             gestureDirection: 'horizontal',
           }}

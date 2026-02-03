@@ -103,6 +103,46 @@ export const COLORS = {
   samuelGradient: ['#0a0410', '#1a0f28', '#2e1a4a'],
   samuelMysticGradient: ['#2e1a4a', '#9d00ff', '#ff00aa'],
   samuelPortalGradient: ['#ff6b00', '#ff00aa', '#00ffcc'],
+
+  // Matrix Theme
+  matrixBackground: '#0D0208',
+  matrixSecondary: '#001A00',
+  matrixTertiary: '#003300',
+  matrixPrimary: '#00FF41',
+  matrixAccent: '#00DD00',
+  matrixGradient: ['#0D0208', '#001A00', '#003300'],
+
+  // Ocean Theme
+  oceanBackground: '#001F3F',
+  oceanSecondary: '#003D5C',
+  oceanTertiary: '#006494',
+  oceanPrimary: '#00D9FF',
+  oceanAccent: '#87CEEB',
+  oceanGradient: ['#001F3F', '#003D5C', '#006494'],
+
+  // Fire & Ice Theme
+  fireIceBackground: '#1A0A2E',
+  fireIceSecondary: '#2E1A47',
+  fireIceTertiary: '#4A1A4A',
+  fireIcePrimary: '#FF6B35',
+  fireIceAccent: '#00D9FF',
+  fireIceGradient: ['#1A0A2E', '#2E1A47', '#4A1A4A'],
+
+  // Gold Luxury Theme
+  goldLuxuryBackground: '#1A1106',
+  goldLuxurySecondary: '#2E1F0A',
+  goldLuxuryTertiary: '#4A3310',
+  goldLuxuryPrimary: '#FFD700',
+  goldLuxuryAccent: '#FFA500',
+  goldLuxuryGradient: ['#1A1106', '#2E1F0A', '#4A3310'],
+
+  // Alien Theme
+  alienBackground: '#0A0520',
+  alienSecondary: '#16093D',
+  alienTertiary: '#2D0F5E',
+  alienPrimary: '#B026FF',
+  alienAccent: '#00FF88',
+  alienGradient: ['#0A0520', '#16093D', '#2D0F5E'],
 };
 
 export const FONTS = {
@@ -367,6 +407,66 @@ export const getThemeColors = (theme: ThemeType = 'dark') => {
         buttonGradient: COLORS.samuelMysticGradient,
       };
 
+    case 'matrix':
+      return {
+        background: COLORS.matrixBackground,
+        secondary: COLORS.matrixSecondary,
+        tertiary: COLORS.matrixTertiary,
+        text: COLORS.matrixPrimary,
+        textSecondary: COLORS.matrixAccent,
+        textTertiary: COLORS.white,
+        gradient: COLORS.matrixGradient,
+        buttonGradient: [COLORS.matrixTertiary, COLORS.matrixPrimary],
+      };
+
+    case 'ocean':
+      return {
+        background: COLORS.oceanBackground,
+        secondary: COLORS.oceanSecondary,
+        tertiary: COLORS.oceanTertiary,
+        text: COLORS.oceanPrimary,
+        textSecondary: COLORS.oceanAccent,
+        textTertiary: COLORS.white,
+        gradient: COLORS.oceanGradient,
+        buttonGradient: [COLORS.oceanTertiary, COLORS.oceanPrimary],
+      };
+
+    case 'fire_ice':
+      return {
+        background: COLORS.fireIceBackground,
+        secondary: COLORS.fireIceSecondary,
+        tertiary: COLORS.fireIceTertiary,
+        text: COLORS.fireIcePrimary,
+        textSecondary: COLORS.fireIceAccent,
+        textTertiary: COLORS.white,
+        gradient: COLORS.fireIceGradient,
+        buttonGradient: [COLORS.fireIcePrimary, COLORS.fireIceAccent],
+      };
+
+    case 'gold_luxury':
+      return {
+        background: COLORS.goldLuxuryBackground,
+        secondary: COLORS.goldLuxurySecondary,
+        tertiary: COLORS.goldLuxuryTertiary,
+        text: COLORS.goldLuxuryPrimary,
+        textSecondary: COLORS.goldLuxuryAccent,
+        textTertiary: COLORS.white,
+        gradient: COLORS.goldLuxuryGradient,
+        buttonGradient: [COLORS.goldLuxuryTertiary, COLORS.goldLuxuryPrimary],
+      };
+
+    case 'alien':
+      return {
+        background: COLORS.alienBackground,
+        secondary: COLORS.alienSecondary,
+        tertiary: COLORS.alienTertiary,
+        text: COLORS.alienPrimary,
+        textSecondary: COLORS.alienAccent,
+        textTertiary: COLORS.white,
+        gradient: COLORS.alienGradient,
+        buttonGradient: [COLORS.alienTertiary, COLORS.alienPrimary],
+      };
+
 
     default: // 'dark'
       return {
@@ -428,6 +528,31 @@ export const THEME_INFO = {
     name: '"Samuel Doutor Estranho"',
     emoji: '🔮✨',
     description: 'Místico e dimensional',
+  },
+  matrix: {
+    name: 'Matrix',
+    emoji: '💻',
+    description: 'Código verde caindo',
+  },
+  ocean: {
+    name: 'Oceano',
+    emoji: '🌊',
+    description: 'Profundezas marinhas',
+  },
+  fire_ice: {
+    name: 'Fogo & Gelo',
+    emoji: '🔥❄️',
+    description: 'Contraste épico de elementos',
+  },
+  gold_luxury: {
+    name: 'Ouro Luxo',
+    emoji: '👑',
+    description: 'Elegância dourada premium',
+  },
+  alien: {
+    name: 'Alienígena',
+    emoji: '👽',
+    description: 'Mundo extraterrestre',
   },
 };
 

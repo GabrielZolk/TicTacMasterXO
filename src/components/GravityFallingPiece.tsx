@@ -16,6 +16,7 @@ import {
     BORDER_RADIUS,
     getPlayerColor,
 } from '../utils/theme';
+import { useEquippedSymbols } from '../hooks/useEquippedItems';
 
 interface GravityFallingPieceProps {
     player: Player;
@@ -36,6 +37,7 @@ const GravityFallingPiece: React.FC<GravityFallingPieceProps> = ({
     cellSize = GAME_DIMENSIONS.cellSize,
     cellGap = 8,
 }) => {
+    const equippedSymbols = useEquippedSymbols();
     const translateY = useSharedValue(0);
     const scale = useSharedValue(1);
     const rotation = useSharedValue(0);
@@ -95,7 +97,7 @@ const GravityFallingPiece: React.FC<GravityFallingPieceProps> = ({
     }));
 
     const getPieceSymbol = (): string => {
-        return player === 'X' ? '✗' : '○';
+        return player === 'X' ? equippedSymbols.playerX : equippedSymbols.playerO;
     };
 
     return (

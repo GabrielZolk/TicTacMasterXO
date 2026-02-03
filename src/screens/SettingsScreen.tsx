@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Switch,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
@@ -19,6 +20,7 @@ import { useTheme } from '../hooks/useTheme';
 import { useI18n } from '../i18n/useI18n';
 import { Language } from '../i18n/translations';
 import AppHeader from '../components/AppHeader';
+import { storeService } from '../services/storeService';
 import {
   COLORS,
   SPACING,
@@ -47,6 +49,8 @@ const SettingsScreen: React.FC = () => {
   const { gameConfig, updateConfig, playSound, triggerHaptics } = useGame();
   const { theme, colors } = useTheme();
   const { t, language, setLanguage } = useI18n();
+  const [debugTapCount, setDebugTapCount] = useState(0);
+  const [showDebugMenu, setShowDebugMenu] = useState(false);
 
   const handleGoBack = async () => {
     await triggerHaptics('light');
@@ -77,6 +81,46 @@ const SettingsScreen: React.FC = () => {
     navigation.navigate('RemoveAds' as never);
   };
 
+  // Secret Debug Menu Trigger
+  const handleVersionTap = async () => {
+    const newCount = debugTapCount + 1;
+    setDebugTapCount(newCount);
+
+    if (newCount === 5) {
+      setShowDebugMenu(true);
+      await playSound('win');
+      await triggerHaptics('heavy');
+      Alert.alert('🐛 Modo Desenvolvedor Ativado!', 'Menu de debug liberado no final da tela.');
+    } else if (newCount > 5) {
+      // Reset if tapped more
+      if (newCount > 8) setDebugTapCount(0);
+    }
+  };
+
+  const handleAddCurrency = async (type: 'stars' | 'diamonds', amount: number) => {
+    await storeService.addCurrency(type, amount, 'Debug Cheat');
+    Alert.alert('🤑 Cheat Ativado', `Adicionado ${amount} ${type}`);
+    await triggerHaptics('heavy');
+  };
+
+  const handleResetStore = async () => {
+    Alert.alert(
+      'Resetar Loja?',
+      'Isso apagará todas as compras e moedas.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'RESETAR TUDO',
+          style: 'destructive',
+          onPress: async () => {
+            await storeService.reset();
+            Alert.alert('Resetado', 'Loja resetada para o estado inicial.');
+          }
+        }
+      ]
+    );
+  };
+
   const settingsData = [
     {
       id: 'sound',
@@ -103,6 +147,8 @@ const SettingsScreen: React.FC = () => {
       icon: 'color-palette-outline',
       type: 'button' as const,
       onPress: handleThemePress,
+      // Fix: Use the actual theme name instead of hardcoded 'Light'
+      valueLabel: THEME_INFO[gameConfig.theme]?.emoji || '🎨',
     },
     {
       id: 'removeAds',
@@ -111,11 +157,12 @@ const SettingsScreen: React.FC = () => {
       icon: 'diamond-outline',
       type: 'button' as const,
       onPress: handleRemoveAdsPress,
+      valueLabel: 'PRO',
     },
   ];
 
   return (
-    <LinearGradient colors={colors.gradient} style={styles.container}>
+    <LinearGradient colors={colors.gradient as any} style={styles.container}>
       <StatusBar
         barStyle={theme === 'dark' ? 'light-content' : 'dark-content'}
         backgroundColor={colors.background}
@@ -170,7 +217,7 @@ const SettingsScreen: React.FC = () => {
                           activeOpacity={0.7}
                         >
                           <Text style={styles.themeButtonText}>
-                            {gameConfig.theme === 'dark' ? 'Dark' : 'Light'}
+                            {setting.valueLabel}
                           </Text>
                           <Ionicons name="chevron-forward" size={20} color={COLORS.gray} />
                         </TouchableOpacity>
@@ -231,12 +278,35 @@ const SettingsScreen: React.FC = () => {
 
             <View style={styles.aboutCard}>
               <Text style={styles.aboutTitle}>{t('aboutTitle')}</Text>
-              <Text style={styles.aboutVersion}>{t('version')}</Text>
+              <TouchableOpacity onPress={handleVersionTap} activeOpacity={0.9}>
+                <Text style={styles.aboutVersion}>{t('version')}</Text>
+              </TouchableOpacity>
               <Text style={styles.aboutDescription}>
                 {t('aboutDescription')}
               </Text>
             </View>
           </Animated.View>
+
+          {/* Secret Debug Menu */}
+          {showDebugMenu && (
+            <Animated.View entering={FadeInUp.duration(500)} style={[styles.settingsSection, { marginTop: SPACING.xl }]}>
+              <Text style={[styles.sectionTitle, { color: COLORS.error }]}>🛠️ Menu Secreto (Dev)</Text>
+              <View style={styles.settingsList}>
+                <TouchableOpacity
+                  style={[styles.settingItem, { backgroundColor: '#1a1a2e' }]}
+                  onPress={() => handleAddCurrency('stars', 1000)}
+                >
+                  <Text style={{ color: COLORS.white }}>⭐ Adicionar 1000 Estrelas</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.settingItem, { backgroundColor: '#330000' }]}
+                  onPress={handleResetStore}
+                >
+                  <Text style={{ color: COLORS.error }}>⚠️ Resetar Loja</Text>
+                </TouchableOpacity>
+              </View>
+            </Animated.View>
+          )}
 
         </ScrollView>
       </SafeAreaView>

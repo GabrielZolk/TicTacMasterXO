@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     View,
     Text,
@@ -36,7 +36,8 @@ const RemoveAdsScreen: React.FC = () => {
 
     const [purchaseState, setPurchaseState] = useState<PurchaseState>(iapService.getState());
     const [selectedProduct, setSelectedProduct] = useState<string>(SUBSCRIPTION_PRODUCTS.MONTHLY_NO_ADS);
-    const [isLoading, setIsLoading] = useState(false);
+    const pendingActionRef = useRef<'purchase' | 'restore' | null>(null);
+    const prevPurchaseStateRef = useRef<PurchaseState>(iapService.getState());
 
     useEffect(() => {
         // Initialize services
@@ -51,6 +52,38 @@ const RemoveAdsScreen: React.FC = () => {
         return unsubscribe;
     }, []);
 
+    useEffect(() => {
+        const prevState = prevPurchaseStateRef.current;
+
+        if (pendingActionRef.current === 'purchase') {
+            const purchaseCompleted = !prevState.isPurchased && purchaseState.isPurchased;
+            const purchaseFinishedWithoutSuccess = prevState.isProcessing && !purchaseState.isProcessing && !purchaseState.isPurchased;
+
+            if (purchaseCompleted) {
+                pendingActionRef.current = null;
+                (async () => {
+                    await playSound('win');
+                    Alert.alert(
+                        'ðŸŽ‰ ParabÃ©ns!',
+                        'Sua assinatura foi ativada com sucesso! Aproveite o jogo sem anÃºncios.',
+                        [{ text: 'Ã“timo!' }]
+                    );
+                })();
+            } else if (purchaseFinishedWithoutSuccess) {
+                pendingActionRef.current = null;
+                if (purchaseState.error) {
+                    Alert.alert(
+                        'Erro',
+                        purchaseState.error || 'NÃ£o foi possÃ­vel processar sua compra. Tente novamente.',
+                        [{ text: 'OK' }]
+                    );
+                }
+            }
+        }
+
+        prevPurchaseStateRef.current = purchaseState;
+    }, [purchaseState, playSound]);
+
     const handleGoBack = async () => {
         await triggerHaptics('light');
         await playSound('button');
@@ -61,39 +94,21 @@ const RemoveAdsScreen: React.FC = () => {
         await triggerHaptics('medium');
         await playSound('button');
 
-        setIsLoading(true);
-
         try {
+            pendingActionRef.current = 'purchase';
             // Use requestSubscription which handles both real and simulated purchases
-            const success = await iapService.requestSubscription(selectedProduct);
-
-            if (success) {
-                await playSound('win');
-                Alert.alert(
-                    '🎉 Parabéns!',
-                    'Sua assinatura foi ativada com sucesso! Aproveite o jogo sem anúncios.',
-                    [{ text: 'Ótimo!' }]
-                );
-            } else {
-                const state = iapService.getState();
-                Alert.alert(
-                    'Erro',
-                    state.error || 'Não foi possível processar sua compra. Tente novamente.',
-                    [{ text: 'OK' }]
-                );
+            const started = await iapService.requestSubscription(selectedProduct);
+            if (!started) {
+                pendingActionRef.current = null;
             }
         } catch (error) {
             Alert.alert('Erro', 'Ocorreu um erro ao processar sua compra.');
-        } finally {
-            setIsLoading(false);
         }
     };
 
     const handleRestore = async () => {
         await triggerHaptics('light');
         await playSound('button');
-
-        setIsLoading(true);
 
         try {
             const success = await iapService.restorePurchases();
@@ -113,13 +128,12 @@ const RemoveAdsScreen: React.FC = () => {
             }
         } catch (error) {
             Alert.alert('Erro', 'Ocorreu um erro ao restaurar compras.');
-        } finally {
-            setIsLoading(false);
         }
     };
 
     const isSubscribed = iapService.isSubscribed();
     const remainingTime = iapService.getRemainingTime();
+    const isLoading = purchaseState.isProcessing;
 
     return (
         <LinearGradient colors={['#0A0A0A', '#1A1A2E']} style={styles.container}>

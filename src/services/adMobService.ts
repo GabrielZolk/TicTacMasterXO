@@ -1,18 +1,49 @@
 // AdMob Service for TicTacMasterXO
-// Using react-native-google-mobile-ads
+// Using react-native-google-mobile-ads with safe failover for Expo Go
 
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import mobileAds, {
-    InterstitialAd,
-    RewardedAd,
-    BannerAd,
-    BannerAdSize,
-    TestIds,
-    AdEventType,
-    RewardedAdEventType,
-    MaxAdContentRating
-} from 'react-native-google-mobile-ads';
+
+// Safe import pattern to allow running in Expo Go without native module
+let mobileAds: any = {
+    initialize: () => Promise.resolve(),
+    setRequestConfiguration: () => Promise.resolve(),
+};
+let InterstitialAd: any = { createForAdRequest: () => ({ load: () => { }, show: () => { }, addAdEventListener: () => { } }) };
+let RewardedAd: any = { createForAdRequest: () => ({ load: () => { }, show: () => { }, addAdEventListener: () => { } }) };
+let BannerAd: any = () => null;
+let BannerAdSize: any = {};
+let TestIds: any = {
+    INTERSTITIAL: 'ca-app-pub-3940256099942544/1033173712',
+    REWARDED: 'ca-app-pub-3940256099942544/5224354917',
+    BANNER: 'ca-app-pub-3940256099942544/6300978111',
+};
+let AdEventType: any = {};
+let RewardedAdEventType: any = {};
+let MaxAdContentRating: any = {};
+let isNativeModuleAvailable = false;
+
+try {
+    // Attempt to require the module dynamically
+    // This allows the code to load even if the module throws on initialization
+    const rnGma = require('react-native-google-mobile-ads');
+
+    // Only use it if it appears valid
+    if (rnGma) {
+        mobileAds = rnGma.default || rnGma;
+        InterstitialAd = rnGma.InterstitialAd;
+        RewardedAd = rnGma.RewardedAd;
+        BannerAd = rnGma.BannerAd;
+        BannerAdSize = rnGma.BannerAdSize;
+        TestIds = rnGma.TestIds;
+        AdEventType = rnGma.AdEventType;
+        RewardedAdEventType = rnGma.RewardedAdEventType;
+        MaxAdContentRating = rnGma.MaxAdContentRating;
+        isNativeModuleAvailable = true;
+    }
+} catch (error) {
+    console.warn('⚠️ AdMob native module not found. Running in mock mode (ads will not show).');
+}
 
 // Test Ad Units (use in development)
 const TEST_AD_UNITS = {
@@ -22,14 +53,13 @@ const TEST_AD_UNITS = {
 };
 
 // Your production ad unit IDs
-// Publisher ID: pub-7541883201708712
 const PRODUCTION_AD_UNITS = {
     interstitial: {
         android: 'ca-app-pub-7541883201708712/7949048213',
         ios: 'ca-app-pub-7541883201708712/7949048213',
     },
     rewarded: {
-        android: 'ca-app-pub-3940256099942544/5224354917', // Using test ID until you create rewarded ad unit
+        android: 'ca-app-pub-3940256099942544/5224354917',
         ios: 'ca-app-pub-3940256099942544/1712485313',
     },
     banner: {
@@ -63,14 +93,14 @@ const defaultAdConfig: AdConfig = {
 class AdMobService {
     private config: AdConfig = defaultAdConfig;
     private isInitialized = false;
-    private interstitialAd: InterstitialAd | null = null;
-    private rewardedAd: RewardedAd | null = null;
+    private interstitialAd: any = null;
+    private rewardedAd: any = null;
     private interstitialLoaded = false;
     private rewardedLoaded = false;
 
     // Get the correct ad unit ID
     private getAdUnitId(type: 'interstitial' | 'rewarded' | 'banner'): string {
-        if (isDevelopment) {
+        if (isDevelopment || !isNativeModuleAvailable) {
             return TEST_AD_UNITS[type];
         }
         const platformKey = Platform.OS === 'ios' ? 'ios' : 'android';
@@ -94,17 +124,21 @@ class AdMobService {
                 await this.saveConfig();
             }
 
-            // Initialize the Google Mobile Ads SDK
-            await mobileAds().initialize();
+            if (isNativeModuleAvailable) {
+                // Initialize the Google Mobile Ads SDK
+                await mobileAds().initialize();
 
-            // Set request configuration
-            await mobileAds().setRequestConfiguration({
-                maxAdContentRating: MaxAdContentRating.G,
-                tagForChildDirectedTreatment: false,
-                tagForUnderAgeOfConsent: false,
-            });
+                // Set request configuration
+                await mobileAds().setRequestConfiguration({
+                    maxAdContentRating: MaxAdContentRating.G,
+                    tagForChildDirectedTreatment: false,
+                    tagForUnderAgeOfConsent: false,
+                });
 
-            console.log('📢 AdMob SDK initialized successfully');
+                console.log('📢 AdMob SDK initialized successfully');
+            } else {
+                console.log('⚠️ AdMob running in mock mode - no native module');
+            }
 
             // Pre-load ads if ads are enabled
             if (this.shouldShowAds()) {
@@ -120,6 +154,11 @@ class AdMobService {
     }
 
     private async loadInterstitialAd(): Promise<void> {
+        if (!isNativeModuleAvailable) {
+            this.interstitialLoaded = false; // Never ready in mock mode to avoid fake shows
+            return;
+        }
+
         try {
             const adUnitId = this.getAdUnitId('interstitial');
             this.interstitialAd = InterstitialAd.createForAdRequest(adUnitId, {
@@ -131,7 +170,7 @@ class AdMobService {
                 this.interstitialLoaded = true;
             });
 
-            this.interstitialAd.addAdEventListener(AdEventType.ERROR, (error) => {
+            this.interstitialAd.addAdEventListener(AdEventType.ERROR, (error: any) => {
                 console.error('📢 Interstitial ad error:', error);
                 this.interstitialLoaded = false;
             });
@@ -150,6 +189,11 @@ class AdMobService {
     }
 
     private async loadRewardedAd(): Promise<void> {
+        if (!isNativeModuleAvailable) {
+            this.rewardedLoaded = false;
+            return;
+        }
+
         try {
             const adUnitId = this.getAdUnitId('rewarded');
             this.rewardedAd = RewardedAd.createForAdRequest(adUnitId, {
@@ -161,11 +205,11 @@ class AdMobService {
                 this.rewardedLoaded = true;
             });
 
-            this.rewardedAd.addAdEventListener(RewardedAdEventType.EARNED_REWARD, (reward) => {
+            this.rewardedAd.addAdEventListener(RewardedAdEventType.EARNED_REWARD, (reward: any) => {
                 console.log('📢 User earned reward:', reward);
             });
 
-            this.rewardedAd.addAdEventListener(AdEventType.ERROR, (error) => {
+            this.rewardedAd.addAdEventListener(AdEventType.ERROR, (error: any) => {
                 console.error('📢 Rewarded ad error:', error);
                 this.rewardedLoaded = false;
             });
@@ -223,6 +267,7 @@ class AdMobService {
     // Show interstitial ad
     async showInterstitial(): Promise<boolean> {
         if (!this.shouldShowAds()) return false;
+        if (!isNativeModuleAvailable) return false;
 
         if (!this.isInterstitialReady()) {
             console.log('📢 Interstitial not ready, loading...');
@@ -241,6 +286,12 @@ class AdMobService {
 
     // Show rewarded ad and return promise that resolves with reward info
     async showRewarded(): Promise<{ type: string; amount: number } | null> {
+        if (!isNativeModuleAvailable) {
+            // Mock reward for development in Expo Go
+            console.log('⚠️ Giving mock reward (Expo Go mode)');
+            return { type: 'mock-reward', amount: 10 };
+        }
+
         if (!this.isRewardedReady()) {
             console.log('📢 Rewarded not ready, loading...');
             await this.loadRewardedAd();
@@ -256,7 +307,7 @@ class AdMobService {
             // Listen for reward earned
             const unsubscribe = this.rewardedAd.addAdEventListener(
                 RewardedAdEventType.EARNED_REWARD,
-                (reward) => {
+                (reward: any) => {
                     unsubscribe();
                     resolve(reward);
                 }
@@ -271,7 +322,7 @@ class AdMobService {
                 }
             );
 
-            this.rewardedAd.show().catch((error) => {
+            this.rewardedAd.show().catch((error: any) => {
                 console.error('Failed to show rewarded ad:', error);
                 unsubscribe();
                 unsubscribeClose();

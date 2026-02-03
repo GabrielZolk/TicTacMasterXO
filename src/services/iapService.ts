@@ -1,5 +1,5 @@
 // In-App Purchase Service for TicTacMasterXO
-// Uses react-native-iap v14+ for real purchases
+// Uses react-native-iap v14+ with useIAP pattern (adapted for service pattern)
 
 import { Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -12,7 +12,7 @@ export const SUBSCRIPTION_PRODUCTS = {
 };
 
 // Subscription prices (for display purposes - actual prices come from stores)
-export const SUBSCRIPTION_PRICES = {
+export const SUBSCRIPTION_PRICES: { [key: string]: { price: string; period: string; description: string } } = {
     [SUBSCRIPTION_PRODUCTS.MONTHLY_NO_ADS]: {
         price: 'R$ 6,90',
         period: 'mês',
@@ -35,10 +35,10 @@ export interface PurchaseState {
 
 const STORAGE_KEY = '@purchase_state';
 
-// Will store the loaded IAP module
+// Will store the loaded IAP module and subscriptions data
 let RNIap: any = null;
 let isIAPAvailable = false;
-let subscriptionOfferTokens: Map<string, string> = new Map();
+let loadedSubscriptions: any[] = [];
 
 class IAPService {
     private purchaseState: PurchaseState = {
@@ -86,16 +86,32 @@ class IAPService {
                 RNIap = require('react-native-iap');
                 console.log('✅ react-native-iap module loaded');
 
+                // Log available functions for debugging
+                const availableFunctions = Object.keys(RNIap).filter(key => typeof RNIap[key] === 'function');
+                console.log('📋 Available RNIap functions:', availableFunctions.slice(0, 20).join(', '));
+
                 // Initialize the IAP connection
-                const result = await RNIap.initConnection();
-                console.log('💳 IAP Connection result:', result);
-                isIAPAvailable = true;
+                if (RNIap.initConnection) {
+                    const result = await RNIap.initConnection();
+                    console.log('💳 IAP Connection result:', result);
+                    isIAPAvailable = true;
+                } else if (RNIap.setup) {
+                    // Alternative API
+                    await RNIap.setup({ storekitMode: 'STOREKIT2_MODE' });
+                    console.log('💳 IAP Setup complete');
+                    isIAPAvailable = true;
+                } else {
+                    console.log('⚠️ No initConnection or setup function found');
+                    isIAPAvailable = false;
+                }
 
-                // Set up purchase listeners
-                this.setupPurchaseListeners();
+                if (isIAPAvailable) {
+                    // Set up purchase listeners
+                    this.setupPurchaseListeners();
 
-                // Pre-load subscription info
-                await this.loadSubscriptions();
+                    // Pre-load subscription info
+                    await this.loadSubscriptions();
+                }
 
             } catch (iapError: any) {
                 console.log('⚠️ IAP not available:', iapError.message);
@@ -116,54 +132,102 @@ class IAPService {
         if (!RNIap) return;
 
         try {
-            // Listen for successful purchases
-            this.purchaseUpdateSubscription = RNIap.purchaseUpdatedListener(
-                async (purchase: any) => {
-                    console.log('📦 Purchase update received:', JSON.stringify(purchase, null, 2));
-
-                    if (purchase && purchase.transactionReceipt) {
-                        try {
-                            // Finish the transaction
-                            if (Platform.OS === 'android') {
-                                await RNIap.acknowledgePurchaseAndroid({ token: purchase.purchaseToken });
-                            }
-                            await RNIap.finishTransaction({ purchase, isConsumable: false });
-                            console.log('✅ Transaction finished');
-
-                            // Process the purchase
-                            await this.processPurchase(purchase);
-                        } catch (error) {
-                            console.error('Error finishing transaction:', error);
-                        }
+            // Listen for successful purchases - check for both v14 and v12/13 API
+            if (typeof RNIap.purchaseUpdatedListener === 'function') {
+                this.purchaseUpdateSubscription = RNIap.purchaseUpdatedListener(
+                    async (purchase: any) => {
+                        console.log('📦 Purchase update received:', JSON.stringify(purchase, null, 2));
+                        await this.handlePurchaseUpdate(purchase);
                     }
-                }
-            );
+                );
+                console.log('✅ purchaseUpdatedListener set up');
+            }
 
             // Listen for purchase errors
-            this.purchaseErrorSubscription = RNIap.purchaseErrorListener(
-                (error: any) => {
-                    console.error('❌ Purchase error:', error);
+            if (typeof RNIap.purchaseErrorListener === 'function') {
+                this.purchaseErrorSubscription = RNIap.purchaseErrorListener(
+                    (error: any) => {
+                        console.error('❌ Purchase error:', error);
 
-                    // User cancelled is not really an error
-                    if (error.code === 'E_USER_CANCELLED') {
-                        console.log('User cancelled the purchase');
-                    } else {
-                        this.purchaseState.error = error.message || 'Falha na compra';
+                        // User cancelled is not really an error
+                        if (error.code === 'E_USER_CANCELLED' || error.code === 'UserCancelled') {
+                            console.log('User cancelled the purchase');
+                        } else {
+                            this.purchaseState.error = error.message || 'Falha na compra';
+                        }
+
+                        this.purchaseState.isProcessing = false;
+                        this.notifyListeners();
                     }
+                );
+                console.log('✅ purchaseErrorListener set up');
+            }
 
-                    this.purchaseState.isProcessing = false;
-                    this.notifyListeners();
-                }
-            );
-
-            console.log('✅ Purchase listeners set up');
+            console.log('✅ Purchase listeners configured');
         } catch (error) {
             console.error('Error setting up purchase listeners:', error);
         }
     }
 
+    private async handlePurchaseUpdate(purchase: any): Promise<void> {
+        if (!purchase) return;
+
+        const hasReceipt = purchase.transactionReceipt || purchase.purchaseToken;
+        if (!hasReceipt) return;
+
+        // Avoid granting entitlement for pending/unspecified Android purchases
+        if (Platform.OS === 'android') {
+            const androidState = purchase.purchaseStateAndroid ?? purchase.purchaseState;
+            if (typeof androidState === 'number' && androidState !== 1) {
+                console.log(`⚠️ Purchase not completed (state: ${androidState}). Ignoring update.`);
+                this.purchaseState.isProcessing = false;
+                this.notifyListeners();
+                return;
+            }
+        }
+
+        try {
+            // Acknowledge the purchase for Android
+            if (Platform.OS === 'android' && purchase.purchaseToken) {
+                try {
+                    if (typeof RNIap.acknowledgePurchaseAndroid === 'function') {
+                        await RNIap.acknowledgePurchaseAndroid({
+                            token: purchase.purchaseToken,
+                            developerPayload: '',
+                        });
+                        console.log('✅ Purchase acknowledged (Android)');
+                    }
+                } catch (ackError: any) {
+                    // May already be acknowledged
+                    console.log('Acknowledge note:', ackError.message);
+                }
+            }
+
+            // Finish the transaction
+            try {
+                if (typeof RNIap.finishTransaction === 'function') {
+                    await RNIap.finishTransaction({
+                        purchase,
+                        isConsumable: false,
+                    });
+                    console.log('✅ Transaction finished');
+                }
+            } catch (finishError: any) {
+                console.log('Finish transaction note:', finishError.message);
+            }
+
+            // Process the purchase
+            await this.processPurchase(purchase);
+        } catch (error) {
+            console.error('Error handling purchase update:', error);
+        }
+    }
+
     private async loadSubscriptions(): Promise<void> {
-        if (!RNIap) return;
+        if (!RNIap) {
+            console.log('❌ RNIap not available, cannot load subscriptions');
+            return;
+        }
 
         try {
             const skus = [
@@ -171,33 +235,69 @@ class IAPService {
                 SUBSCRIPTION_PRODUCTS.YEARLY_NO_ADS,
             ];
 
-            console.log('📋 Loading subscriptions for SKUs:', skus);
-            const subscriptions = await RNIap.getSubscriptions({ skus });
-            console.log('📋 Loaded subscriptions:', JSON.stringify(subscriptions, null, 2));
+            console.log('='.repeat(60));
+            console.log('📋 LOADING SUBSCRIPTIONS - DEBUG INFO');
+            console.log('='.repeat(60));
+            console.log('📋 SKUs being requested:', JSON.stringify(skus));
 
-            // Store offer tokens for Android
-            if (Platform.OS === 'android' && subscriptions) {
-                subscriptions.forEach((sub: any) => {
-                    if (sub.subscriptionOfferDetails && sub.subscriptionOfferDetails.length > 0) {
-                        const offerToken = sub.subscriptionOfferDetails[0].offerToken;
-                        subscriptionOfferTokens.set(sub.productId, offerToken);
-                        console.log(`📝 Stored offer token for ${sub.productId}: ${offerToken?.substring(0, 20)}...`);
-                    }
+            // Try different API methods
+            let subscriptions: any[] = [];
 
-                    // Update display prices
-                    if (sub.subscriptionOfferDetails?.[0]?.pricingPhases?.pricingPhaseList?.[0]) {
-                        const priceInfo = sub.subscriptionOfferDetails[0].pricingPhases.pricingPhaseList[0];
-                        const formattedPrice = priceInfo.formattedPrice;
+            if (typeof RNIap.getSubscriptions === 'function') {
+                // v12/v13/v14 API
+                subscriptions = await RNIap.getSubscriptions({ skus });
+            } else if (typeof RNIap.fetchProducts === 'function') {
+                // Alternative API
+                const result = await RNIap.fetchProducts({ skus, type: 'subs' });
+                subscriptions = result || [];
+            }
 
-                        if (sub.productId === SUBSCRIPTION_PRODUCTS.MONTHLY_NO_ADS) {
-                            SUBSCRIPTION_PRICES[SUBSCRIPTION_PRODUCTS.MONTHLY_NO_ADS].price = formattedPrice;
-                        } else if (sub.productId === SUBSCRIPTION_PRODUCTS.YEARLY_NO_ADS) {
-                            SUBSCRIPTION_PRICES[SUBSCRIPTION_PRODUCTS.YEARLY_NO_ADS].price = formattedPrice;
+            loadedSubscriptions = subscriptions || [];
+
+            console.log('📋 Number of subscriptions returned:', loadedSubscriptions.length);
+
+            if (loadedSubscriptions.length > 0) {
+                console.log('📋 First subscription structure:', JSON.stringify(loadedSubscriptions[0], null, 2));
+            }
+
+            if (!loadedSubscriptions || loadedSubscriptions.length === 0) {
+                console.log('⚠️ NO SUBSCRIPTIONS FOUND! Possible causes:');
+                console.log('   1. SKUs do not match exactly with Play Console');
+                console.log('   2. Subscriptions are not "Active" in Play Console');
+                console.log('   3. App is not published in any test track');
+                console.log('   4. Testing account is not a licensed tester');
+                console.log('   5. App not installed from Play Store');
+                return;
+            }
+
+            // Update prices from store
+            if (Platform.OS === 'android') {
+                loadedSubscriptions.forEach((sub: any) => {
+                    console.log(`📝 Processing subscription: ${sub.productId || sub.id}`);
+
+                    // v14 structure: subscriptionOfferDetails or subscriptionOfferDetailsAndroid
+                    const offerDetails = sub.subscriptionOfferDetails || sub.subscriptionOfferDetailsAndroid;
+
+                    if (offerDetails && offerDetails.length > 0) {
+                        console.log(`✅ Found ${offerDetails.length} offer(s) for ${sub.productId || sub.id}`);
+
+                        // Get price from first offer
+                        const pricingPhases = offerDetails[0]?.pricingPhases?.pricingPhaseList;
+                        if (pricingPhases && pricingPhases.length > 0) {
+                            const formattedPrice = pricingPhases[0].formattedPrice;
+                            const productId = sub.productId || sub.id;
+                            if (formattedPrice && SUBSCRIPTION_PRICES[productId]) {
+                                SUBSCRIPTION_PRICES[productId].price = formattedPrice;
+                                console.log(`💰 Updated price for ${productId}: ${formattedPrice}`);
+                            }
                         }
+                    } else {
+                        console.log(`⚠️ No offer details for ${sub.productId || sub.id}`);
                     }
                 });
             }
 
+            console.log('📋 Loaded subscriptions count:', loadedSubscriptions.length);
         } catch (error) {
             console.error('Error loading subscriptions:', error);
         }
@@ -258,7 +358,6 @@ class IAPService {
     // Subscribe to state changes
     subscribe(listener: (state: PurchaseState) => void): () => void {
         this.listeners.push(listener);
-        // Return unsubscribe function
         return () => {
             this.listeners = this.listeners.filter(l => l !== listener);
         };
@@ -281,7 +380,7 @@ class IAPService {
         return this.purchaseState.expiryDate;
     }
 
-    // Request a subscription purchase
+    // Request a subscription purchase - v14 API compatible
     async requestSubscription(productId: string): Promise<boolean> {
         console.log('🛒 Requesting subscription for:', productId);
 
@@ -303,35 +402,85 @@ class IAPService {
         this.notifyListeners();
 
         try {
-            // For Android, we need the offer token
-            if (Platform.OS === 'android') {
-                let offerToken = subscriptionOfferTokens.get(productId);
+            // Find the subscription in loaded subscriptions
+            const subscription = loadedSubscriptions.find(
+                (sub: any) => (sub.productId || sub.id) === productId
+            );
 
-                // If we don't have the token, try to load subscriptions again
-                if (!offerToken) {
-                    console.log('📋 Offer token not found, reloading subscriptions...');
-                    await this.loadSubscriptions();
-                    offerToken = subscriptionOfferTokens.get(productId);
+            if (!subscription) {
+                console.log('❌ Subscription not found in loaded subscriptions');
+                console.log('   Looking for:', productId);
+                console.log('   Available:', loadedSubscriptions.map((s: any) => s.productId || s.id).join(', '));
+
+                // Try to reload subscriptions
+                await this.loadSubscriptions();
+                const retrySubscription = loadedSubscriptions.find(
+                    (sub: any) => (sub.productId || sub.id) === productId
+                );
+
+                if (!retrySubscription) {
+                    throw new Error('Produto não configurado. Por favor, tente novamente mais tarde.');
                 }
+            }
 
-                if (!offerToken) {
+            const sub = subscription || loadedSubscriptions.find(
+                (s: any) => (s.productId || s.id) === productId
+            );
+
+            if (Platform.OS === 'android') {
+                // Get offer details for Android (v14 structure)
+                const offerDetails = sub?.subscriptionOfferDetails || sub?.subscriptionOfferDetailsAndroid;
+
+                if (!offerDetails || offerDetails.length === 0) {
+                    console.log('❌ No offer details found for subscription');
                     throw new Error('Produto não configurado. Por favor, tente novamente mais tarde.');
                 }
 
-                console.log('🚀 Requesting subscription with offer token...');
-                await RNIap.requestSubscription({
-                    sku: productId,
-                    subscriptionOffers: [{
+                const offerToken = offerDetails[0].offerToken;
+                console.log('🚀 Requesting subscription with offer token:', offerToken?.substring(0, 30) + '...');
+
+                // Try v14 requestPurchase API first
+                if (typeof RNIap.requestPurchase === 'function') {
+                    console.log('📦 Using requestPurchase API');
+                    await RNIap.requestPurchase({
+                        request: {
+                            google: {
+                                skus: [productId],
+                                subscriptionOffers: [{
+                                    sku: productId,
+                                    offerToken: offerToken,
+                                }],
+                            },
+                        },
+                        type: 'subs',
+                    });
+                } else if (typeof RNIap.requestSubscription === 'function') {
+                    // Fallback to requestSubscription
+                    console.log('📦 Using requestSubscription API');
+                    await RNIap.requestSubscription({
                         sku: productId,
-                        offerToken: offerToken,
-                    }],
-                });
+                        subscriptionOffers: [{
+                            sku: productId,
+                            offerToken: offerToken,
+                        }],
+                    });
+                } else {
+                    throw new Error('Nenhuma API de compra disponível');
+                }
             } else {
-                // iOS
-                await RNIap.requestSubscription({ sku: productId });
+                // iOS - simpler API
+                if (typeof RNIap.requestPurchase === 'function') {
+                    await RNIap.requestPurchase({
+                        request: {
+                            apple: { sku: productId },
+                        },
+                        type: 'subs',
+                    });
+                } else if (typeof RNIap.requestSubscription === 'function') {
+                    await RNIap.requestSubscription({ sku: productId });
+                }
             }
 
-            // The result will come through purchaseUpdatedListener
             console.log('✅ Subscription request sent');
             return true;
         } catch (error: any) {
@@ -342,7 +491,7 @@ class IAPService {
             this.notifyListeners();
 
             // Show user-friendly error
-            if (error.code !== 'E_USER_CANCELLED') {
+            if (error.code !== 'E_USER_CANCELLED' && error.code !== 'UserCancelled') {
                 Alert.alert(
                     'Erro',
                     error.message || 'Não foi possível processar sua compra. Tente novamente.',
@@ -373,7 +522,12 @@ class IAPService {
 
         try {
             // Get available purchases from store
-            const availablePurchases = await RNIap.getAvailablePurchases();
+            let availablePurchases: any[] = [];
+
+            if (typeof RNIap.getAvailablePurchases === 'function') {
+                availablePurchases = await RNIap.getAvailablePurchases();
+            }
+
             console.log('📦 Available purchases:', JSON.stringify(availablePurchases, null, 2));
 
             // Find active subscription
@@ -403,7 +557,7 @@ class IAPService {
         }
     }
 
-    // Reset purchase state (for testing or when subscription expires)
+    // Reset purchase state
     async resetPurchaseState(): Promise<void> {
         this.purchaseState = {
             isProcessing: false,
@@ -439,24 +593,29 @@ class IAPService {
 
     // Cleanup when app closes
     async cleanup(): Promise<void> {
-        if (this.purchaseUpdateSubscription) {
-            this.purchaseUpdateSubscription.remove();
-        }
-        if (this.purchaseErrorSubscription) {
-            this.purchaseErrorSubscription.remove();
-        }
-        if (RNIap) {
-            try {
-                await RNIap.endConnection();
-            } catch (error) {
-                console.error('Error ending IAP connection:', error);
+        try {
+            if (this.purchaseUpdateSubscription?.remove) {
+                this.purchaseUpdateSubscription.remove();
             }
+            if (this.purchaseErrorSubscription?.remove) {
+                this.purchaseErrorSubscription.remove();
+            }
+            if (RNIap?.endConnection) {
+                await RNIap.endConnection();
+            }
+        } catch (error) {
+            console.error('Error during cleanup:', error);
         }
     }
 
-    // Check if IAP is available (real purchases possible)
+    // Check if IAP is available
     isIAPAvailable(): boolean {
         return isIAPAvailable;
+    }
+
+    // Get loaded subscriptions for debugging
+    getLoadedSubscriptions(): any[] {
+        return loadedSubscriptions;
     }
 }
 

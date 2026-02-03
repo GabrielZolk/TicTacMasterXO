@@ -171,13 +171,27 @@ const HomeScreen: React.FC = () => {
 
         {/* Header with Settings, Stats and Remove Ads */}
         <View style={styles.header}>
-          <TouchableOpacity
-            onPress={handleSettingsPress}
-            style={styles.headerButton}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="settings-outline" size={24} color={COLORS.white} />
-          </TouchableOpacity>
+          <View style={styles.headerLeft}>
+            <TouchableOpacity
+              onPress={handleSettingsPress}
+              style={styles.headerButton}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="settings-outline" size={24} color={COLORS.white} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={async () => {
+                await triggerHaptics('light');
+                await playSound('button');
+                (navigation as any).navigate('Store');
+              }}
+              style={[styles.headerButton, styles.storeButton]}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="storefront-outline" size={24} color={COLORS.gold} />
+            </TouchableOpacity>
+          </View>
 
           {/* Remove Ads Button - prominently displayed */}
           <RemoveAdsButton variant="inline" />
@@ -286,6 +300,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     ...SHADOWS.light,
     position: 'relative',
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    alignItems: 'center',
+  },
+  storeButton: {
+    backgroundColor: COLORS.gold + '20',
+    borderWidth: 1,
+    borderColor: COLORS.gold,
   },
   badge: {
     position: 'absolute',

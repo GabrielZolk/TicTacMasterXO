@@ -21,6 +21,7 @@ import {
   createTextStyle,
 } from '../utils/theme';
 import { useTheme } from '../hooks/useTheme';
+import { useEquippedSymbols } from '../hooks/useEquippedItems';
 import MysticCellEffect from './MysticCellEffect';
 
 interface GameCellProps {
@@ -47,6 +48,7 @@ const GameCell: React.FC<GameCellProps> = ({
   isHiddenForAnimation = false,
 }) => {
   const { theme } = useTheme();
+  const equippedSymbols = useEquippedSymbols();
   const scale = useSharedValue(1);
   const rotation = useSharedValue(0);
   const opacity = useSharedValue(1);
@@ -146,8 +148,8 @@ const GameCell: React.FC<GameCellProps> = ({
 
 
   const getPieceSymbol = (player: Cell): string => {
-    if (player === 'X') return '✗';
-    if (player === 'O') return '○';
+    if (player === 'X') return equippedSymbols.playerX;
+    if (player === 'O') return equippedSymbols.playerO;
     return '';
   };
 

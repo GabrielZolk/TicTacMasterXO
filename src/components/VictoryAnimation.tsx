@@ -15,6 +15,7 @@ import Animated, {
 
 import { Player } from '../types/game';
 import { COLORS, getPlayerColor } from '../utils/theme';
+import { useEquippedEffect } from '../hooks/useEquippedItems';
 
 const { width, height } = Dimensions.get('window');
 
@@ -38,6 +39,29 @@ const VictoryAnimation: React.FC<VictoryAnimationProps> = ({
   onComplete,
   duration = 3000,
 }) => {
+  const equippedEffect = useEquippedEffect();
+
+  // Determine animation type from equipped effect
+  const animationType = equippedEffect?.animationType || 'confetti';
+  console.log('🎆 [VictoryAnimation] Equipped effect:', equippedEffect);
+  console.log('🎆 [VictoryAnimation] Animation type:', animationType);
+
+  // If fireworks effect is equipped, show fireworks component
+  if (animationType === 'fireworks') {
+    return <FireworksAnimation onComplete={onComplete} />;
+  }
+
+  // Default: confetti/sparkles animation with particles
+  return <ConfettiAnimation winner={winner} onComplete={onComplete} duration={duration} colors={equippedEffect?.colors} />;
+};
+
+// Separate component for confetti animation to avoid hook issues
+const ConfettiAnimation: React.FC<{
+  winner: Player;
+  onComplete?: () => void;
+  duration: number;
+  colors?: string[];
+}> = ({ winner, onComplete, duration, colors }) => {
   const particles: Particle[] = [];
   const particleCount = 20;
 
@@ -104,7 +128,11 @@ const VictoryAnimation: React.FC<VictoryAnimationProps> = ({
       ))}
 
       {/* Confetti */}
-      <ConfettiOverlay animationProgress={animationProgress} winner={winner} />
+      <ConfettiOverlay
+        animationProgress={animationProgress}
+        winner={winner}
+        colors={colors}
+      />
     </View>
   );
 };
@@ -148,9 +176,14 @@ const ParticleComponent: React.FC<{
 const ConfettiOverlay: React.FC<{
   animationProgress: Animated.SharedValue<number>;
   winner: Player;
-}> = ({ animationProgress, winner }) => {
+  colors?: string[];
+}> = ({ animationProgress, winner, colors }) => {
   const confettiPieces = [];
   const confettiCount = 15;
+
+  // Use custom colors if provided, otherwise use defaults
+  const defaultColors = [getPlayerColor(winner), COLORS.gold, COLORS.yellow];
+  const effectColors = colors && colors.length > 0 ? colors : defaultColors;
 
   for (let i = 0; i < confettiCount; i++) {
     confettiPieces.push({
@@ -159,8 +192,7 @@ const ConfettiOverlay: React.FC<{
       startY: -50,
       endY: height + 100,
       rotation: Math.random() * 360,
-      color: i % 3 === 0 ? getPlayerColor(winner) : 
-             i % 3 === 1 ? COLORS.gold : COLORS.yellow,
+      color: effectColors[i % effectColors.length],
       delay: Math.random() * 500,
     });
   }
