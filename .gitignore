@@ -39,3 +39,20 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# internal dev notes & tooling (kept locally, not published)
+BUG_FIX_FINAL.md
+CHANGELOG_FIXES.md
+CHECKLIST_MONETIZACAO.md
+DEV_CHEATS.md
+EAS_BUILD_FIX.md
+GUIA_MONETIZACAO_COMPLETO.md
+LOJA_README.md
+MODO_ONLINE_INSTRUCOES.md
+NITRO_ERROR_FIX.md
+TEMA_SAMUEL_DOUTOR_ESTRANHO.md
+TicTacMasterXO.flp
+Backup/
+.idea/
+.claude/
+.agent/
