@@ -10,6 +10,8 @@ import {
     ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+
+type IoniconName = keyof typeof Ionicons.glyphMap;
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, SHADOWS } from '../utils/theme';
 import { useTheme } from '../hooks/useTheme';
@@ -48,10 +50,28 @@ const OnlineGameEndModal: React.FC<OnlineGameEndModalProps> = ({
     const fadeAnim = React.useRef(new Animated.Value(0)).current;
 
     const [iWantRematch, setIWantRematch] = useState(false);
+    const [rematchTimedOut, setRematchTimedOut] = useState(false);
+    const rematchTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Rematch timeout: 30 seconds
+    useEffect(() => {
+        if (iWantRematch && !opponentWantsRematch) {
+            rematchTimerRef.current = setTimeout(() => {
+                setRematchTimedOut(true);
+            }, 30000);
+        }
+        return () => {
+            if (rematchTimerRef.current) {
+                clearTimeout(rematchTimerRef.current);
+                rematchTimerRef.current = null;
+            }
+        };
+    }, [iWantRematch, opponentWantsRematch]);
 
     useEffect(() => {
         if (visible) {
             setIWantRematch(false); // Reset internal state when visible
+            setRematchTimedOut(false);
             Animated.parallel([
                 Animated.timing(fadeAnim, {
                     toValue: 1,
@@ -89,30 +109,20 @@ const OnlineGameEndModal: React.FC<OnlineGameEndModalProps> = ({
     const getResultInfo = () => {
         if (isDraw) {
             return {
-                title: 'Empate!',
-                subtitle: 'Ambos jogaram bem.',
+                title: t('gameResult.draw'),
+                subtitle: t('gameResult.drawMessage'),
                 icon: 'hand-right-outline' as const,
                 color: COLORS.warning,
                 emoji: '🤝',
             };
         } else if (winner) {
-            // Logic to determine if "I" won or lost
-            // winner is 'X' or 'O'
-            // Need to know my symbol. 
-            // Assuming standard: Host is X, Guest is O (but this might change if we implement swap turn)
-            // Actually simpler: pass 'winner === mySymbol'
-
-            // Since we don't have exact symbol prop here easily without refactoring, 
-            // let's rely on standard X=Host O=Guest logic or assume the parent passes correct winner info?
-            // Actually, let's just show who won by name.
-
             const winnerIsHost = winner === 'X';
             const amIWinner = (isHost && winnerIsHost) || (!isHost && !winnerIsHost);
             const winnerName = winnerIsHost ? (isHost ? myPlayerName : opponentName) : (isHost ? opponentName : myPlayerName);
 
             return {
-                title: amIWinner ? 'Vitória!' : 'Derrota',
-                subtitle: amIWinner ? 'Parabéns pela vitória!' : 'Mais sorte na próxima vez!',
+                title: amIWinner ? t('gameResult.victory') : t('gameResult.defeat'),
+                subtitle: amIWinner ? t('gameResult.victoryMessage') : t('gameResult.defeatMessage'),
                 icon: amIWinner ? 'trophy-outline' : 'sad-outline',
                 color: amIWinner ? COLORS.success : COLORS.error,
                 emoji: amIWinner ? '🏆' : '😔',
@@ -120,7 +130,7 @@ const OnlineGameEndModal: React.FC<OnlineGameEndModalProps> = ({
             };
         }
         return {
-            title: 'Fim de Jogo',
+            title: t('gameResult.gameOver'),
             subtitle: '',
             icon: 'flag-outline',
             color: COLORS.info,
@@ -154,7 +164,7 @@ const OnlineGameEndModal: React.FC<OnlineGameEndModalProps> = ({
                             <View style={[styles.iconContainer, { backgroundColor: resultInfo.color + '20' }]}>
                                 <Text style={styles.emoji}>{resultInfo.emoji}</Text>
                                 <Ionicons
-                                    name={resultInfo.icon}
+                                    name={resultInfo.icon as IoniconName}
                                     size={32}
                                     color={resultInfo.color}
                                     style={styles.headerIcon}
@@ -174,15 +184,15 @@ const OnlineGameEndModal: React.FC<OnlineGameEndModalProps> = ({
                         <View style={styles.rematchStatusContainer}>
                             {/* Me Status */}
                             <View style={styles.playerStatus}>
-                                <Text style={[styles.playerName, { color: colors.text }]}>{myPlayerName} (Você)</Text>
+                                <Text style={[styles.playerName, { color: colors.text }]}>{myPlayerName} ({t('youSuffix')})</Text>
                                 {iWantRematch ? (
                                     <View style={[styles.badge, { backgroundColor: COLORS.success }]}>
                                         <Ionicons name="checkmark" size={12} color="white" />
-                                        <Text style={styles.badgeText}>Pronto</Text>
+                                        <Text style={styles.badgeText}>{t('ready')}</Text>
                                     </View>
                                 ) : (
                                     <View style={[styles.badge, { backgroundColor: COLORS.warning }]}>
-                                        <Text style={styles.badgeText}>Aguardando...</Text>
+                                        <Text style={styles.badgeText}>{t('waitingShort')}</Text>
                                     </View>
                                 )}
                             </View>
@@ -197,11 +207,11 @@ const OnlineGameEndModal: React.FC<OnlineGameEndModalProps> = ({
                                 {opponentWantsRematch ? (
                                     <View style={[styles.badge, { backgroundColor: COLORS.success }]}>
                                         <Ionicons name="checkmark" size={12} color="white" />
-                                        <Text style={styles.badgeText}>Pronto</Text>
+                                        <Text style={styles.badgeText}>{t('ready')}</Text>
                                     </View>
                                 ) : (
                                     <View style={[styles.badge, { backgroundColor: COLORS.warning }]}>
-                                        <Text style={styles.badgeText}>Aguardando...</Text>
+                                        <Text style={styles.badgeText}>{t('waitingShort')}</Text>
                                     </View>
                                 )}
                             </View>
@@ -217,14 +227,21 @@ const OnlineGameEndModal: React.FC<OnlineGameEndModalProps> = ({
                                 >
                                     <Ionicons name="refresh-outline" size={20} color="white" />
                                     <Text style={styles.primaryButtonText}>
-                                        Jogar Novamente
+                                        {t('actions.playAgain')}
                                     </Text>
                                 </TouchableOpacity>
+                            ) : rematchTimedOut && !opponentWantsRematch ? (
+                                <View style={styles.waitingContainer}>
+                                    <Ionicons name="time-outline" size={20} color={COLORS.warning} />
+                                    <Text style={[styles.waitingText, { color: COLORS.warning }]}>
+                                        {t('opponentDidntAnswer')}
+                                    </Text>
+                                </View>
                             ) : (
                                 <View style={styles.waitingContainer}>
                                     <ActivityIndicator size="small" color={colors.textSecondary} />
                                     <Text style={[styles.waitingText, { color: colors.textSecondary }]}>
-                                        {opponentWantsRematch ? 'Iniciando nova partida...' : 'Aguardando oponente...'}
+                                        {opponentWantsRematch ? t('startingNewGame') : t('waitingForOpponent')}
                                     </Text>
                                 </View>
                             )}
@@ -234,9 +251,9 @@ const OnlineGameEndModal: React.FC<OnlineGameEndModalProps> = ({
                                 onPress={onExit}
                                 activeOpacity={0.8}
                             >
-                                <Ionicons name="exit-outline" size={20} color={colors.error} />
-                                <Text style={[styles.secondaryButtonText, { color: colors.error }]}>
-                                    Sair da Sala
+                                <Ionicons name="exit-outline" size={20} color={COLORS.error} />
+                                <Text style={[styles.secondaryButtonText, { color: COLORS.error }]}>
+                                    {t('leaveRoom')}
                                 </Text>
                             </TouchableOpacity>
                         </View>

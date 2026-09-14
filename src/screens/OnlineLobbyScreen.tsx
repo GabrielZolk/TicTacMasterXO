@@ -1,9 +1,10 @@
+import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
     StyleSheet,
-    SafeAreaView,
+  
     StatusBar,
     TouchableOpacity,
     TextInput,
@@ -44,7 +45,7 @@ const OnlineLobbyScreen: React.FC = () => {
     const [isCreatingRoom, setIsCreatingRoom] = useState(false);
     const [isJoiningRoom, setIsJoiningRoom] = useState(false);
     const [roomCode, setRoomCode] = useState('');
-    const [playerName, setPlayerName] = useState('Jogador');
+    const [playerName, setPlayerName] = useState(t('defaultPlayerName'));
     const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
     const [showJoinInput, setShowJoinInput] = useState(false);
     const [isInitializing, setIsInitializing] = useState(true);
@@ -61,7 +62,7 @@ const OnlineLobbyScreen: React.FC = () => {
                 setIsInitializing(false);
             } catch (error) {
                 console.error('Failed to initialize Firebase:', error);
-                Alert.alert('Erro', 'Não foi possível conectar ao Firebase');
+                Alert.alert(t('errorTitle'), t('firebaseConnectFailed'));
                 setIsInitializing(false);
             }
         };
@@ -82,7 +83,7 @@ const OnlineLobbyScreen: React.FC = () => {
 
     const handleCreateRoom = async () => {
         if (playerName.trim().length === 0) {
-            Alert.alert('Atenção', 'Digite seu nome');
+            Alert.alert(t('warningTitle'), t('typeYourName'));
             return;
         }
 
@@ -102,7 +103,7 @@ const OnlineLobbyScreen: React.FC = () => {
             });
         } catch (error) {
             console.error('Failed to create room:', error);
-            Alert.alert('Erro', 'Não foi possível criar a sala');
+            Alert.alert(t('errorTitle'), t('createRoomFailed'));
         } finally {
             setIsCreatingRoom(false);
         }
@@ -110,12 +111,12 @@ const OnlineLobbyScreen: React.FC = () => {
 
     const handleJoinRoom = async () => {
         if (playerName.trim().length === 0) {
-            Alert.alert('Atenção', 'Digite seu nome');
+            Alert.alert(t('warningTitle'), t('typeYourName'));
             return;
         }
 
         if (roomCode.trim().length !== 6) {
-            Alert.alert('Atenção', 'Código da sala deve ter 6 caracteres');
+            Alert.alert(t('warningTitle'), t('roomCodeLengthError'));
             return;
         }
 
@@ -136,7 +137,7 @@ const OnlineLobbyScreen: React.FC = () => {
             });
         } catch (error) {
             console.error('Failed to join room:', error);
-            Alert.alert('Erro', 'Não foi possível entrar na sala. Verifique o código.');
+            Alert.alert(t('errorTitle'), t('joinRoomFailed'));
         } finally {
             setIsJoiningRoom(false);
         }
@@ -148,13 +149,13 @@ const OnlineLobbyScreen: React.FC = () => {
     };
 
     return (
-        <LinearGradient colors={COLORS.primaryGradient} style={styles.container}>
+        <LinearGradient colors={COLORS.primaryGradient as [string, string, ...string[]]} style={styles.container}>
             <StatusBar barStyle="light-content" backgroundColor={COLORS.darkBackground} />
             <SafeAreaView style={styles.safeArea}>
 
                 {/* Header */}
                 <AppHeader
-                    title="Modo Online 🌍"
+                    title={`${t('onlineModeTitle')} 🌍`}
                     showBackButton={true}
                     showHomeButton={true}
                     onBackPress={handleGoBack}
@@ -165,7 +166,7 @@ const OnlineLobbyScreen: React.FC = () => {
 
                     {/* Title Section */}
                     <Animated.View entering={FadeInUp.delay(200).duration(600)} style={styles.titleSection}>
-                        <Text style={styles.title}>Jogue pela Internet</Text>
+                        <Text style={styles.title}>{t('playOnlineTitle')}</Text>
                         <Text style={styles.subtitle}>
                             Conecte-se com um amigo e jogue de qualquer lugar
                         </Text>
@@ -178,7 +179,7 @@ const OnlineLobbyScreen: React.FC = () => {
                             style={styles.input}
                             value={playerName}
                             onChangeText={setPlayerName}
-                            placeholder="Digite seu nome..."
+                            placeholder={t('enterYourName')}
                             placeholderTextColor={COLORS.gray}
                             maxLength={15}
                         />
@@ -187,7 +188,7 @@ const OnlineLobbyScreen: React.FC = () => {
                     {/* Create Room Button */}
                     <Animated.View entering={FadeInUp.delay(400).duration(600)} style={styles.buttonContainer}>
                         <CustomButton
-                            title="🎮 Criar Nova Sala"
+                            title={`🎮 ${t('createNewRoom')}`}
                             onPress={handleCreateRoom}
                             loading={isCreatingRoom || isInitializing}
                             disabled={isCreatingRoom || isJoiningRoom || isInitializing}
@@ -227,7 +228,7 @@ const OnlineLobbyScreen: React.FC = () => {
                             />
 
                             <CustomButton
-                                title="Entrar na Sala"
+                                title={t('joinRoomTitle')}
                                 onPress={handleJoinRoom}
                                 loading={isJoiningRoom}
                                 disabled={roomCode.length !== 6 || isJoiningRoom}
@@ -259,8 +260,8 @@ const OnlineLobbyScreen: React.FC = () => {
                             <Text style={styles.statusText}>
                                 {connectionStatus === 'connecting' && 'Conectando...'}
                                 {connectionStatus === 'connected' && 'Conectado'}
-                                {connectionStatus === 'waiting' && 'Aguardando jogador...'}
-                                {connectionStatus === 'error' && 'Erro de conexão'}
+                                {connectionStatus === 'waiting' && t('waitingForPlayer')}
+                                {connectionStatus === 'error' && t('connectionError')}
                             </Text>
                         </Animated.View>
                     )}

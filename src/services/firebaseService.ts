@@ -1,5 +1,5 @@
 import { database } from '../config/firebase';
-import { ref, set, get, onValue, off, remove, update, onChildAdded, query, orderByChild, startAt, onDisconnect } from 'firebase/database';
+import { ref, set, get, onValue, off, remove, update, onChildAdded, query, orderByChild, startAt, onDisconnect, push, serverTimestamp } from 'firebase/database';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { GameMode, Player, GameMove } from '../types/game';
 import {
@@ -86,13 +86,33 @@ class FirebaseService {
     /**
      * Cria uma nova sala (HOST)
      */
-    async createRoom(mode: GameMode, hostName: string): Promise<string> {
+    /**
+     * @param forcedRoomId when supplied (ranked matchmaking), the room is created
+     * with this exact code so the matched guest can join it. Without it the host
+     * generated an unrelated code and the guest could never find the room.
+     */
+    async createRoom(mode: GameMode, hostName: string, forcedRoomId?: string): Promise<string> {
         if (!this.currentUserId) {
             throw new Error('User not authenticated');
         }
 
-        // Gerar código de sala (6 caracteres)
-        this.currentRoomId = this.generateRoomId();
+        // Gerar código de sala (6 caracteres). Sem checar colisão, um código
+        // repetido sobrescrevia (destruía) a partida de outros dois jogadores.
+        if (forcedRoomId) {
+            this.currentRoomId = forcedRoomId.toUpperCase();
+        } else {
+            let candidate = this.generateRoomId();
+            for (let attempt = 0; attempt < 5; attempt++) {
+                try {
+                    const existing = await get(ref(database, `rooms/${candidate}`));
+                    if (!existing.exists()) break;
+                    candidate = this.generateRoomId();
+                } catch {
+                    break; // sem conexão para checar — segue com o código gerado
+                }
+            }
+            this.currentRoomId = candidate;
+        }
         this.role = 'host';
 
         const roomData: RoomInfo = {
@@ -118,7 +138,7 @@ class FirebaseService {
         this.updateConnectionStatus('waiting');
 
         // Escutar mudanças na sala
-        this.listenToRoom();
+        await this.listenToRoom();
 
         return this.currentRoomId;
     }
@@ -172,7 +192,7 @@ class FirebaseService {
             this.updateConnectionStatus('connected');
 
             // Escutar mudanças na sala
-            this.listenToRoom();
+            await this.listenToRoom();
 
             // Notificar host que guest entrou
             this.sendMessage({
@@ -194,7 +214,7 @@ class FirebaseService {
     /**
      * Escutar mudanças na sala em tempo real
      */
-    private listenToRoom(): void {
+    private async listenToRoom(): Promise<void> {
         if (!this.roomRef) return;
 
         // Escutar mudanças nos dados da sala
@@ -224,12 +244,39 @@ class FirebaseService {
         // e que sejam processadas na ordem correta
         this.messagesRef = ref(database, `rooms/${this.currentRoomId}/messages`);
 
-        // Usar query para ouvir apenas novas mensagens a partir de agora
-        // Na prática, como salas são efêmeras, podemos ouvir tudo, mas limitByLast ou startAt é mais seguro
-        const messagesQuery = query(this.messagesRef, orderByChild('timestamp'), startAt(Date.now()));
+        // Only messages created AFTER we attached should be delivered. The old
+        // filter was startAt(Date.now()) on the local clock: if this device ran
+        // even slightly ahead of the opponent's, every message they sent for
+        // that many seconds sorted below the cutoff and was silently dropped —
+        // the board froze on one side only.
+        // push() keys sort chronologically, so we remember the newest existing
+        // key and simply ignore anything at or below it. No clock involved.
+        const messagesNode = this.messagesRef;
+        let cursorKey: string | null = null;
+        const seenKeys = new Set<string>();
 
-        onChildAdded(messagesQuery, (snapshot) => {
-            if (!snapshot.exists()) return;
+        try {
+            const existing = await get(messagesNode);
+            if (existing.exists()) {
+                existing.forEach(child => {
+                    if (child.key && (!cursorKey || child.key > cursorKey)) {
+                        cursorKey = child.key;
+                    }
+                    return false;
+                });
+            }
+        } catch (error) {
+            console.log('Could not read message cursor:', error);
+        }
+
+        onChildAdded(messagesNode, (snapshot) => {
+            if (!snapshot.exists() || !snapshot.key) return;
+
+            // Skip history that predates this listener, and any duplicate
+            // delivery of a key we already handled.
+            if (cursorKey && snapshot.key <= cursorKey) return;
+            if (seenKeys.has(snapshot.key)) return;
+            seenKeys.add(snapshot.key);
 
             const message = snapshot.val() as PeerMessage;
 
@@ -246,15 +293,19 @@ class FirebaseService {
     /**
      * Envia uma jogada
      */
-    sendMove(row: number, col: number, player: Player, moveNumber: number): void {
+    sendMove(row: number, col: number, player: Player, moveNumber: number, gravityFinalRow?: number): void {
+        const payload: MovePayload = {
+            row,
+            col,
+            player,
+            moveNumber,
+        };
+        if (gravityFinalRow !== undefined) {
+            payload.gravityFinalRow = gravityFinalRow;
+        }
         this.sendMessage({
             type: 'move',
-            payload: {
-                row,
-                col,
-                player,
-                moveNumber,
-            } as MovePayload,
+            payload,
         });
     }
 
@@ -332,6 +383,29 @@ class FirebaseService {
             const roomToDelete = ref(database, `rooms/${this.currentRoomId}`);
             await remove(roomToDelete);
             console.log('🗑️ Room deleted');
+
+            // The public lobby advertises the room under its own path, and that
+            // entry was only cleared when someone joined. A host who backed out
+            // left the ad behind, so the lobby kept listing a room that no
+            // longer existed and anyone tapping it got "Room not found".
+            try {
+                await remove(ref(database, `public_lobby/${this.currentRoomId}`));
+            } catch (error) {
+                console.log('Failed to clear public lobby entry:', error);
+            }
+        }
+
+        // Guest: remove ourselves from the room. The onDisconnect handler only
+        // fires when the socket actually drops, which never happens while the
+        // app stays open — so leaving used to keep the guest slot occupied,
+        // the host got no "opponent left", and the room read as full to others.
+        if (this.role === 'guest' && this.currentRoomId) {
+            try {
+                await remove(ref(database, `rooms/${this.currentRoomId}/guest`));
+                console.log('👋 Guest slot released');
+            } catch (error) {
+                console.log('Failed to release guest slot:', error);
+            }
         }
 
         this.currentRoomId = null;
@@ -350,13 +424,18 @@ class FirebaseService {
             return;
         }
 
-        const messageRef = ref(database, `rooms/${this.currentRoomId}/messages`);
-        const newMessageRef = ref(database, `rooms/${this.currentRoomId}/messages/${Date.now()}`);
+        // push() generates a unique, chronologically ordered key. The old
+        // `messages/${Date.now()}` key meant two messages in the same
+        // millisecond OVERWROTE each other — and an overwrite is a
+        // child_changed, so onChildAdded never fired and the move vanished.
+        const newMessageRef = push(ref(database, `rooms/${this.currentRoomId}/messages`));
 
         const messageWithSender = {
             ...message,
             senderId: this.currentUserId,
-            timestamp: Date.now(),
+            // Server clock, so ordering doesn't depend on the two devices'
+            // clocks agreeing with each other.
+            timestamp: serverTimestamp(),
         };
 
         set(newMessageRef, messageWithSender);
@@ -366,17 +445,17 @@ class FirebaseService {
     /**
      * Registrar callback para mensagens
      */
-    onMessage(callback: MessageCallback): void {
+    onMessage(callback: MessageCallback | null): void {
         this.messageCallback = callback;
     }
 
     /**
      * Registrar callback para status de conexão
      */
-    onConnectionStatus(callback: ConnectionCallback): void {
+    onConnectionStatus(callback: ConnectionCallback | null): void {
         this.connectionCallback = callback;
         // Immediate callback with current status
-        if (this.currentConnectionStatus) {
+        if (callback && this.currentConnectionStatus) {
             callback(this.currentConnectionStatus);
         }
     }
@@ -391,7 +470,7 @@ class FirebaseService {
     /**
      * Registrar callback para atualizações da sala
      */
-    onRoomUpdate(callback: RoomUpdateCallback): void {
+    onRoomUpdate(callback: RoomUpdateCallback | null): void {
         this.roomCallback = callback;
     }
 

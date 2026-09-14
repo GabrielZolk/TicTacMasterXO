@@ -1,9 +1,10 @@
+import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
     StyleSheet,
-    SafeAreaView,
+  
     StatusBar,
     TouchableOpacity,
     Alert,
@@ -29,6 +30,7 @@ import {
     createTextStyle,
 } from '../utils/theme';
 import { firebaseService } from '../services/firebaseService';
+import { useI18n } from '../i18n/useI18n';
 import { ConnectionStatus, PeerMessage, RoomInfo } from '../types/online';
 
 type OnlineWaitingRoomScreenNavigationProp = StackNavigationProp<RootStackParamList, any>;
@@ -46,6 +48,7 @@ const OnlineWaitingRoomScreen: React.FC = () => {
     const route = useRoute<OnlineWaitingRoomScreenRouteProp>();
     const { mode, roomCode, playerName, isHost } = route.params;
     const { playSound, triggerHaptics } = useGame();
+    const { t } = useI18n();
 
     const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(
         firebaseService.getConnectionStatus()
@@ -140,9 +143,9 @@ const OnlineWaitingRoomScreen: React.FC = () => {
 
             case 'leave':
                 // Opponent left
-                Alert.alert('Oponente Saiu', 'O outro jogador saiu da sala', [
+                Alert.alert(t('opponentLeftTitle'), t('opponentLeftRoomBody'), [
                     {
-                        text: 'OK',
+                        text: t('okAction'),
                         onPress: handleLeaveRoom,
                     },
                 ]);
@@ -174,7 +177,7 @@ const OnlineWaitingRoomScreen: React.FC = () => {
 
     const handleReady = () => {
         if (!opponentName) {
-            Alert.alert('Aguarde', 'Aguardando outro jogador entrar na sala...');
+            Alert.alert(t('waitTitle'), t('waitingForPlayerJoin'));
             return;
         }
 
@@ -186,7 +189,7 @@ const OnlineWaitingRoomScreen: React.FC = () => {
 
     const handleCopyCode = async () => {
         await Clipboard.setString(roomCode);
-        Alert.alert('Copiado!', `Código ${roomCode} copiado para a área de transferência`);
+        Alert.alert(t('copiedTitle'), t('copiedBody', { code: roomCode }));
         playSound('click');
         triggerHaptics('light');
     };
@@ -194,7 +197,7 @@ const OnlineWaitingRoomScreen: React.FC = () => {
     const handleShareCode = async () => {
         try {
             await Share.share({
-                message: `Vamos jogar Tic Tac Toe online! Entre na sala com o código: ${roomCode}`,
+                message: t('shareRoomMessage', { code: roomCode }),
             });
             playSound('click');
             triggerHaptics('light');
@@ -212,28 +215,35 @@ const OnlineWaitingRoomScreen: React.FC = () => {
 
     const confirmLeave = () => {
         Alert.alert(
-            'Sair da Sala',
-            'Tem certeza que deseja sair?',
+            t('leaveRoom'),
+            t('leaveRoomConfirmBody'),
             [
-                { text: 'Cancelar', style: 'cancel' },
-                { text: 'Sair', style: 'destructive', onPress: handleLeaveRoom },
+                { text: t('cancel'), style: 'cancel' },
+                { text: t('leave'), style: 'destructive', onPress: handleLeaveRoom },
             ]
         );
     };
 
-    // Função para obter o nome do modo em português
+    // Icon + the mode's own i18n title, so the room header follows the language.
+    const MODE_ICONS: Record<string, string> = {
+        classic: '🎯',
+        infinity: '♾️',
+        gravity: '🪐',
+        blind: '🙈',
+        bigBoard: '🏟️',
+        survival: '❤️',
+        blitz: '⚡',
+        reverse: '🔄',
+        bomb: '💣',
+        mirror: '🪞',
+        mad: '🎲',
+        gobble: '🍽️',
+    };
+
     const getModeName = (gameMode: string): string => {
-        const modeNames: Record<string, string> = {
-            classic: '🎯 Clássico',
-            infinity: '♾️ Infinito',
-            gravity: '🪐 Gravity',
-            blind: '🙈 Cego',
-            bigBoard: '🏟️ Grande',
-            survival: '❤️ Sobrevivência',
-            blitz: '⚡ Blitz',
-            reverse: '🔄 Reverso',
-        };
-        return modeNames[gameMode] || gameMode;
+        const icon = MODE_ICONS[gameMode];
+        if (!icon) return gameMode;
+        return `${icon} ${t(`${gameMode}.title` as any)}`;
     };
 
     return (
@@ -243,7 +253,7 @@ const OnlineWaitingRoomScreen: React.FC = () => {
 
                 {/* Header */}
                 <AppHeader
-                    title="Sala de Espera"
+                    title={t('waitingRoomTitle')}
                     showBackButton={true}
                     showHomeButton={false}
                     onBackPress={confirmLeave}
@@ -259,7 +269,7 @@ const OnlineWaitingRoomScreen: React.FC = () => {
 
                     {/* Room Code Display */}
                     <Animated.View entering={FadeInUp.delay(200).duration(600)} style={styles.codeContainer}>
-                        <Text style={styles.codeLabel}>Código da Sala</Text>
+                        <Text style={styles.codeLabel}>{t('roomCodeLabel')}</Text>
                         <View style={styles.codeBox}>
                             <Text style={styles.codeText}>{roomCode}</Text>
                         </View>
@@ -274,12 +284,12 @@ const OnlineWaitingRoomScreen: React.FC = () => {
                             <View style={styles.shareButtons}>
                                 <TouchableOpacity style={styles.shareButton} onPress={handleCopyCode}>
                                     <Ionicons name="copy-outline" size={20} color={COLORS.white} />
-                                    <Text style={styles.shareButtonText}>Copiar</Text>
+                                    <Text style={styles.shareButtonText}>{t('copyAction')}</Text>
                                 </TouchableOpacity>
 
                                 <TouchableOpacity style={styles.shareButton} onPress={handleShareCode}>
                                     <Ionicons name="share-social-outline" size={20} color={COLORS.white} />
-                                    <Text style={styles.shareButtonText}>Compartilhar</Text>
+                                    <Text style={styles.shareButtonText}>{t('shareAction')}</Text>
                                 </TouchableOpacity>
                             </View>
                         )}
@@ -295,7 +305,7 @@ const OnlineWaitingRoomScreen: React.FC = () => {
                             <Text style={styles.playerName}>{playerName} (Você)</Text>
                             <View style={[styles.statusBadge, { backgroundColor: isReady ? COLORS.success : COLORS.warning }]}>
                                 <Text style={styles.statusText}>
-                                    {isReady ? '✅ Pronto' : '⏳ Aguardando'}
+                                    {isReady ? t('readyUpper') : t('waitingBadge')}
                                 </Text>
                             </View>
                         </View>
@@ -315,12 +325,12 @@ const OnlineWaitingRoomScreen: React.FC = () => {
                                 />
                             </View>
                             <Text style={styles.playerName}>
-                                {opponentName || 'Aguardando...'}
+                                {opponentName || t('waitingShort')}
                             </Text>
                             {opponentName && (
                                 <View style={[styles.statusBadge, { backgroundColor: opponentReady ? COLORS.success : COLORS.warning }]}>
                                     <Text style={styles.statusText}>
-                                        {opponentReady ? '✅ Pronto' : '⏳ Aguardando'}
+                                        {opponentReady ? t('readyUpper') : t('waitingBadge')}
                                     </Text>
                                 </View>
                             )}
@@ -331,7 +341,7 @@ const OnlineWaitingRoomScreen: React.FC = () => {
                     <Animated.View entering={FadeInUp.delay(500).duration(600)} style={styles.buttonContainer}>
                         {!isReady ? (
                             <CustomButton
-                                title="✅ Estou Pronto!"
+                                title={`✅ ${t('imReady')}`}
                                 onPress={handleReady}
                                 disabled={!opponentName}
                                 variant="primary"
@@ -340,7 +350,7 @@ const OnlineWaitingRoomScreen: React.FC = () => {
                             <View style={styles.waitingMessage}>
                                 <Ionicons name="time-outline" size={24} color={COLORS.info} />
                                 <Text style={styles.waitingText}>
-                                    {opponentReady ? 'Iniciando jogo...' : 'Aguardando oponente ficar pronto...'}
+                                    {opponentReady ? 'Iniciando jogo...' : t('waitingOpponentReady')}
                                 </Text>
                             </View>
                         )}
@@ -349,7 +359,7 @@ const OnlineWaitingRoomScreen: React.FC = () => {
                     {/* Leave Button */}
                     <Animated.View entering={FadeInUp.delay(600).duration(600)} style={styles.leaveButtonContainer}>
                         <CustomButton
-                            title="❌ Sair da Sala"
+                            title={`❌ ${t('leaveRoom')}`}
                             onPress={confirmLeave}
                             variant="secondary"
                         />

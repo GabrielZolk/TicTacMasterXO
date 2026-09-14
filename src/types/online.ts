@@ -30,8 +30,13 @@ export interface OnlineGameState {
 }
 
 export interface PeerMessage {
-  type: 'join' | 'ready' | 'move' | 'restart' | 'leave' | 'sync' | 'start_player' | 'rematch_request';
+  type: 'join' | 'ready' | 'move' | 'restart' | 'leave' | 'sync' | 'start_player' | 'rematch_request' | 'emote';
   payload?: any;
+}
+
+export interface EmotePayload {
+  emoteId: string;
+  emoji: string;
 }
 
 export interface JoinPayload {
@@ -43,6 +48,7 @@ export interface MovePayload {
   col: number;
   player: Player;
   moveNumber: number;
+  gravityFinalRow?: number; // For gravity mode: pre-determined row after gravity fall (-1 = no fall)
 }
 
 export interface SyncPayload {
