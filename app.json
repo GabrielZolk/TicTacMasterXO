@@ -2,7 +2,7 @@
   "expo": {
     "name": "TicTacMasterXO",
     "slug": "TicTacMasterXO",
-    "version": "2.0.3",
+    "version": "2.6.1",
     "orientation": "portrait",
     "icon": "./assets/tttmxo.png",
     "userInterfaceStyle": "light",
@@ -24,13 +24,23 @@
         "NSUserTrackingUsageDescription": "Este app usa publicidade personalizada para manter-se gratuito."
       }
     },
+    "androidStatusBar": {
+      "translucent": true,
+      "backgroundColor": "#00000000",
+      "barStyle": "light-content"
+    },
+    "androidNavigationBar": {
+      "visible": "sticky-immersive",
+      "barStyle": "light-content",
+      "backgroundColor": "#0A0A0A"
+    },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/android/mipmap-xxxhdpi/tttmxo.png",
         "backgroundColor": "#0A0A0A"
       },
       "package": "com.zolk.TicTacMasterXO",
-      "versionCode": 12,
+      "versionCode": 33,
       "permissions": [
         "com.google.android.gms.permission.AD_ID",
         "android.permission.INTERNET",
