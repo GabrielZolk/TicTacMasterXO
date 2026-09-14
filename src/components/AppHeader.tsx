@@ -8,11 +8,12 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootStackParamList } from '../types/game';
 import { useGame } from '../contexts/GameContext';
-import { 
-  COLORS, 
-  SPACING, 
+import {
+  COLORS,
+  SPACING,
   SHADOWS,
   createTextStyle,
 } from '../utils/theme';
@@ -22,6 +23,7 @@ type AppHeaderNavigationProp = StackNavigationProp<RootStackParamList>;
 interface AppHeaderProps {
   title: string;
   showBackButton?: boolean;
+  showBack?: boolean; // Alias for showBackButton
   showHomeButton?: boolean;
   onBackPress?: () => void;
   rightComponent?: React.ReactNode;
@@ -30,12 +32,15 @@ interface AppHeaderProps {
 const AppHeader: React.FC<AppHeaderProps> = ({
   title,
   showBackButton = false,
+  showBack = false,
   showHomeButton = false,
   onBackPress,
   rightComponent,
 }) => {
+  const shouldShowBack = showBackButton || showBack;
   const navigation = useNavigation<AppHeaderNavigationProp>();
   const { playSound, triggerHaptics } = useGame();
+  const insets = useSafeAreaInsets();
 
   const handleBackPress = async () => {
     await triggerHaptics('light');
@@ -55,10 +60,10 @@ const AppHeader: React.FC<AppHeaderProps> = ({
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top + SPACING.sm }]}>
       {/* Left Button */}
       <View style={styles.leftContainer}>
-        {showBackButton && (
+        {shouldShowBack && (
           <TouchableOpacity
             onPress={handleBackPress}
             style={styles.button}
@@ -95,7 +100,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
+    paddingBottom: SPACING.md,
   },
   leftContainer: {
     width: 44,

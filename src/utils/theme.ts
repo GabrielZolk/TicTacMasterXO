@@ -104,6 +104,16 @@ export const COLORS = {
   samuelMysticGradient: ['#2e1a4a', '#9d00ff', '#ff00aa'],
   samuelPortalGradient: ['#ff6b00', '#ff00aa', '#00ffcc'],
 
+  // Copa Nick theme (homenagem — figurinha de álbum de Copa)
+  copaNickBackground: '#F6EDD4',   // papel creme do álbum
+  copaNickSecondary: '#EFE3BC',    // creme mais quente
+  copaNickTertiary: '#17803E',     // verde bandeira
+  copaNickPrimary: '#155F31',      // verde escuro (texto)
+  copaNickGold: '#C9A227',         // chuteira de ouro
+  copaNickBlue: '#1B4FA0',         // azul copa
+  copaNickGradient: ['#F6EDD4', '#EFE3BC', '#E7D392'],
+  copaNickShineGradient: ['#C9A227', '#FFE98A', '#C9A227'],
+
   // Matrix Theme
   matrixBackground: '#0D0208',
   matrixSecondary: '#001A00',
@@ -247,7 +257,9 @@ export const ANIMATIONS = {
   },
 };
 
-export const createButtonStyle = (variant: 'primary' | 'secondary' | 'outline' = 'primary') => {
+export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'gradient' | 'success';
+
+export const createButtonStyle = (variant: ButtonVariant = 'primary') => {
   const baseStyle = {
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.md,
@@ -272,6 +284,13 @@ export const createButtonStyle = (variant: 'primary' | 'secondary' | 'outline' =
         backgroundColor: COLORS.darkSecondary,
         borderWidth: 1,
         borderColor: COLORS.gray,
+      };
+    case 'success':
+      return {
+        ...baseStyle,
+        backgroundColor: COLORS.success,
+        borderWidth: 1,
+        borderColor: COLORS.success,
       };
     case 'outline':
       return {
@@ -308,31 +327,57 @@ export const getPlayerColor = (player: 'X' | 'O'): string => {
   return player === 'X' ? COLORS.xColor : COLORS.oColor;
 };
 
+// Returns the BRIGHT color gradient used in the store preview for a given
+// theme. getThemeColors().gradient returns DARKER variants (used for screen
+// backgrounds), but the store preview uses these brighter ones — so the
+// in-game board (when "Tema" skin is equipped) must use these to match.
+export const getStorePreviewGradient = (theme: ThemeType = 'dark'): string[] => {
+  switch (theme) {
+    case 'meme': return COLORS.memeGradient;
+    case 'nature': return COLORS.natureGradient;
+    case 'neon': return COLORS.neonGradient;
+    case 'retro': return COLORS.retroGradient;
+    case 'futuristic': return COLORS.futuristicGradient;
+    case 'samuel': return COLORS.samuelGradient;
+    case 'copa_nick': return ['#F6EDD4', '#FFE98A', '#17803E'];
+    case 'matrix': return COLORS.matrixGradient;
+    case 'ocean': return COLORS.oceanGradient;
+    case 'fire_ice': return COLORS.fireIceGradient;
+    case 'gold_luxury': return COLORS.goldLuxuryGradient;
+    case 'alien': return COLORS.alienGradient;
+    case 'cartoon': return COLORS.cartoonGradient;
+    case 'light': return ['#E8EAF0', '#D0D4E0', '#C0C4D4'];
+    case 'dark':
+    default: return COLORS.primaryGradient;
+  }
+};
+
 // Theme utility functions
 export const getThemeColors = (theme: ThemeType = 'dark') => {
   switch (theme) {
     case 'light':
       return {
-        background: COLORS.lightBackground,
-        secondary: COLORS.lightSecondary,
-        tertiary: COLORS.lightTertiary,
-        text: COLORS.black,
-        textSecondary: COLORS.darkGray,
-        textTertiary: COLORS.gray,
-        gradient: COLORS.lightGradient,
-        buttonGradient: COLORS.lightButtonGradient,
+        background: '#E8EAF0',
+        secondary: '#D0D4E0',
+        tertiary: '#B8BDD0',
+        text: '#1A1A2E',
+        textSecondary: '#333344',
+        textTertiary: '#555566',
+        border: '#9EA3B8',
+        gradient: ['#E8EAF0', '#D0D4E0', '#C0C4D4'],
+        buttonGradient: ['#4A4A6A', '#2A2A4A'],
       };
 
     case 'cartoon':
       return {
-        background: COLORS.cartoonBackground,
-        secondary: COLORS.cartoonSecondary,
-        tertiary: COLORS.cartoonTertiary,
-        text: COLORS.cartoonPrimary,
-        textSecondary: COLORS.memePrimary,
-        textTertiary: COLORS.darkGray,
-        gradient: COLORS.cartoonGradient,
-        buttonGradient: [COLORS.cartoonTertiary, COLORS.cartoonPrimary],
+        background: '#2E1A3E',
+        secondary: '#3D2650',
+        tertiary: '#4E3562',
+        text: '#FF69B4',
+        textSecondary: '#FFB6C1',
+        textTertiary: '#E0E0E0',
+        gradient: ['#2E1A3E', '#3D2650', '#4E3562'],
+        buttonGradient: ['#FF69B4', '#FF1493'],
       };
 
     case 'futuristic':
@@ -349,14 +394,14 @@ export const getThemeColors = (theme: ThemeType = 'dark') => {
 
     case 'meme':
       return {
-        background: COLORS.memeBackground,
-        secondary: COLORS.memeSecondary,
-        tertiary: COLORS.memeTertiary,
-        text: COLORS.memePrimary,
-        textSecondary: COLORS.darkGray,
-        textTertiary: COLORS.black,
-        gradient: COLORS.memeGradient,
-        buttonGradient: [COLORS.memeTertiary, COLORS.memePrimary],
+        background: '#1A1A00',
+        secondary: '#2E2E0A',
+        tertiary: '#444410',
+        text: '#FFD700',
+        textSecondary: '#FF6347',
+        textTertiary: '#E0E0E0',
+        gradient: ['#1A1A00', '#2E2E0A', '#444410'],
+        buttonGradient: ['#FF6347', '#FF4500'],
       };
 
     case 'neon':
@@ -405,6 +450,18 @@ export const getThemeColors = (theme: ThemeType = 'dark') => {
         textTertiary: COLORS.white,
         gradient: COLORS.samuelGradient,
         buttonGradient: COLORS.samuelMysticGradient,
+      };
+
+    case 'copa_nick':
+      return {
+        background: COLORS.copaNickBackground,
+        secondary: COLORS.copaNickSecondary,
+        tertiary: COLORS.copaNickTertiary,
+        text: COLORS.copaNickPrimary,
+        textSecondary: COLORS.copaNickGold,
+        textTertiary: COLORS.copaNickBlue,
+        gradient: COLORS.copaNickGradient,
+        buttonGradient: [COLORS.copaNickTertiary, COLORS.copaNickGold],
       };
 
     case 'matrix':
@@ -528,6 +585,11 @@ export const THEME_INFO = {
     name: '"Samuel Doutor Estranho"',
     emoji: '🔮✨',
     description: 'Místico e dimensional',
+  },
+  copa_nick: {
+    name: '"Copa Nick"',
+    emoji: '⚽👟',
+    description: 'Figurinha de Copa — bola e Chuteira de Ouro',
   },
   matrix: {
     name: 'Matrix',

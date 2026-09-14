@@ -36,26 +36,37 @@ const GameLogo: React.FC<GameLogoProps> = ({ size = 'large', animated = true }) 
     }
   }, [animated, rotation, scale]);
 
+  // `container` sets width only. It used to pin a height too (200x120 for
+  // `large`), and "TicTac Master" at 48px needs ~330px, so on a 390px phone the
+  // title wrapped to two lines, ate the whole box, and the X/O — which are
+  // absolutely positioned — landed on top of the word "Master".
+  //
+  // Two things keep that from coming back: the title is sized to fit one line
+  // on a narrow screen (and clamped with numberOfLines), and `icon` gives the
+  // X/O their own vertical space instead of collapsing to zero height.
   const logoSizes = {
     small: {
-      container: { width: 120, height: 80 },
+      container: { width: 160 },
+      icon: { width: 64, height: 48 },
       xSize: 40,
       oSize: 35,
       titleSize: FONTS.sizes.lg,
       subtitleSize: FONTS.sizes.sm,
     },
     medium: {
-      container: { width: 160, height: 100 },
+      container: { width: 220 },
+      icon: { width: 80, height: 60 },
       xSize: 50,
       oSize: 45,
       titleSize: FONTS.sizes.xxl,
       subtitleSize: FONTS.sizes.md,
     },
     large: {
-      container: { width: 200, height: 120 },
+      container: { width: 300 },
+      icon: { width: 96, height: 72 },
       xSize: 60,
       oSize: 55,
-      titleSize: FONTS.sizes.header,
+      titleSize: FONTS.sizes.xxxl,
       subtitleSize: FONTS.sizes.lg,
     },
   };
@@ -79,12 +90,15 @@ const GameLogo: React.FC<GameLogoProps> = ({ size = 'large', animated = true }) 
   return (
     <View style={[styles.container, currentSize.container]}>
       {/* Title */}
-      <Text style={[styles.title, { fontSize: currentSize.titleSize }]}>
+      <Text
+        style={[styles.title, { fontSize: currentSize.titleSize }]}
+        numberOfLines={1}
+      >
         TicTac Master
       </Text>
-      
+
       {/* Logo Icons Container */}
-      <View style={styles.logoContainer}>
+      <View style={[styles.logoContainer, currentSize.icon]}>
         {/* X Icon */}
         <Animated.View style={[styles.xContainer, animatedXStyle]}>
           <Text

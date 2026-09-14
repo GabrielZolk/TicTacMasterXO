@@ -1,9 +1,10 @@
+import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
+
   StatusBar,
   TouchableOpacity,
   ScrollView,
@@ -45,7 +46,7 @@ const ThemeScreen: React.FC = () => {
   const navigation = useNavigation();
   const { gameConfig, updateConfig, playSound, triggerHaptics } = useGame();
   const { theme, colors } = useTheme();
-  const { t } = useI18n();
+  const { t, tc } = useI18n();
   const [ownedThemes, setOwnedThemes] = useState<string[]>(['dark', 'light']);
 
   // Load owned themes whenever screen gains focus
@@ -85,12 +86,12 @@ const ThemeScreen: React.FC = () => {
     if (!ownedThemes.includes(selectedTheme)) {
       await triggerHaptics('heavy'); // Changed from 'error'
       Alert.alert(
-        'Tema Bloqueado',
-        'Você precisa desbloquear este tema na loja para usá-lo.',
+        t('themeLockedTitle'),
+        t('themeLockedBody'),
         [
           { text: 'Cancelar', style: 'cancel' },
           {
-            text: 'Ir para Loja',
+            text: t('goToStore'),
             onPress: () => {
               navigation.navigate('Store' as never);
             }
@@ -105,6 +106,11 @@ const ThemeScreen: React.FC = () => {
     await triggerHaptics('medium');
     await playSound('button');
     updateConfig({ theme: selectedTheme });
+    // Force immediate save
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    const currentConfig = JSON.parse(await AsyncStorage.getItem('@game_config') || '{}');
+    currentConfig.theme = selectedTheme;
+    await AsyncStorage.setItem('@game_config', JSON.stringify(currentConfig));
   };
 
   return (
@@ -178,10 +184,10 @@ const ThemeScreen: React.FC = () => {
                     {/* Theme Info */}
                     <View style={styles.themeInfo}>
                       <Text style={[styles.themeName, { color: colors.text }]}>
-                        {option.name}
+                        {tc(`item.theme_${option.id}.name`, option.name)}
                       </Text>
                       <Text style={[styles.themeDescription, { color: colors.textSecondary }]}>
-                        {option.description}
+                        {tc(`item.theme_${option.id}.desc`, option.description)}
                       </Text>
                     </View>
 
@@ -202,7 +208,7 @@ const ThemeScreen: React.FC = () => {
             <View style={[styles.infoContent, { backgroundColor: colors.secondary }]}>
               <Ionicons name="storefront-outline" size={24} color={COLORS.gold} />
               <View style={styles.infoText}>
-                <Text style={[styles.infoTitle, { color: COLORS.gold }]}>Quer mais temas?</Text>
+                <Text style={[styles.infoTitle, { color: COLORS.gold }]}>{t('wantMoreThemes')}</Text>
                 <Text style={[styles.infoDescription, { color: colors.textSecondary }]}>
                   Visite a loja para desbloquear novos visuais incríveis!
                 </Text>
@@ -211,7 +217,7 @@ const ThemeScreen: React.FC = () => {
                 onPress={() => navigation.navigate('Store' as never)}
                 style={styles.storeButton}
               >
-                <Text style={styles.storeButtonText}>Ir para Loja</Text>
+                <Text style={styles.storeButtonText}>{t('goToStore')}</Text>
                 <Ionicons name="arrow-forward" size={16} color={colors.background} />
               </TouchableOpacity>
             </View>

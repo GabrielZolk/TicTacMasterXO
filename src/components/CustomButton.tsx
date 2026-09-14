@@ -14,7 +14,7 @@ import { COLORS, SPACING, BORDER_RADIUS, createButtonStyle, createTextStyle, SHA
 interface CustomButtonProps {
   title: string;
   onPress: () => void;
-  variant?: 'primary' | 'secondary' | 'outline' | 'gradient';
+  variant?: 'primary' | 'secondary' | 'outline' | 'gradient' | 'success';
   size?: 'small' | 'medium' | 'large';
   disabled?: boolean;
   loading?: boolean;
@@ -110,7 +110,7 @@ const CustomButton: React.FC<CustomButtonProps> = ({
   if (variant === 'gradient') {
     return (
       <LinearGradient
-        colors={disabled ? [COLORS.darkGray, COLORS.gray] : COLORS.buttonGradient}
+        colors={(disabled ? [COLORS.darkGray, COLORS.gray] : COLORS.buttonGradient) as [string, string, ...string[]]}
         style={[
           styles.gradientButton,
           sizeStyles[size],
