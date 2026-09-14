@@ -59,8 +59,8 @@ const PRODUCTION_AD_UNITS = {
         ios: 'ca-app-pub-7541883201708712/7949048213',
     },
     rewarded: {
-        android: 'ca-app-pub-3940256099942544/5224354917',
-        ios: 'ca-app-pub-3940256099942544/1712485313',
+        android: 'ca-app-pub-7541883201708712/4846840407',
+        ios: 'ca-app-pub-7541883201708712/4846840407',
     },
     banner: {
         android: 'ca-app-pub-7541883201708712/5107246548',
@@ -93,6 +93,7 @@ const defaultAdConfig: AdConfig = {
 class AdMobService {
     private config: AdConfig = defaultAdConfig;
     private isInitialized = false;
+    private initializationPromise: Promise<void> | null = null;
     private interstitialAd: any = null;
     private rewardedAd: any = null;
     private interstitialLoaded = false;
@@ -235,14 +236,42 @@ class AdMobService {
         }
     }
 
+    /**
+     * Re-reads the stored config and expires a lapsed subscription.
+     * initialize() returns early once initialised, so calling it on a timer
+     * never re-checked expiry — a cancelled subscriber stayed ad-free for the
+     * whole process lifetime.
+     */
+    async refreshSubscriptionState(): Promise<void> {
+        try {
+            const savedConfig = await AsyncStorage.getItem(STORAGE_KEY);
+            if (savedConfig) {
+                this.config = { ...defaultAdConfig, ...JSON.parse(savedConfig) };
+            }
+            if (this.config.subscriptionExpiry && Date.now() > this.config.subscriptionExpiry) {
+                this.config.isSubscribed = false;
+                this.config.subscriptionExpiry = null;
+                await this.saveConfig();
+            }
+        } catch (error) {
+            console.log('Failed to refresh subscription state:', error);
+        }
+    }
+
     shouldShowAds(): boolean {
-        // Don't show ads if subscribed
+        // An expired subscription must not keep ads off, so check expiry FIRST.
+        const expiry = this.config.subscriptionExpiry;
+        if (expiry && Date.now() > expiry) {
+            return this.config.adsEnabled;
+        }
+
+        // Don't show ads if subscribed (and not expired)
         if (this.config.isSubscribed) {
             return false;
         }
 
-        // Check subscription expiry
-        if (this.config.subscriptionExpiry && Date.now() < this.config.subscriptionExpiry) {
+        // Lifetime/None-expiry entitlement still active
+        if (expiry && Date.now() < expiry) {
             return false;
         }
 
@@ -304,30 +333,41 @@ class AdMobService {
                 return;
             }
 
+            let resolved = false;
+            let earnedReward: any = null;
+
+            const safeResolve = (value: any) => {
+                if (resolved) return;
+                resolved = true;
+                try { unsubscribeReward?.(); } catch {}
+                try { unsubscribeClose?.(); } catch {}
+                resolve(value);
+            };
+
             // Listen for reward earned
-            const unsubscribe = this.rewardedAd.addAdEventListener(
+            const unsubscribeReward = this.rewardedAd.addAdEventListener(
                 RewardedAdEventType.EARNED_REWARD,
                 (reward: any) => {
-                    unsubscribe();
-                    resolve(reward);
+                    earnedReward = reward;
+                    // Don't resolve immediately — wait for CLOSED to ensure ad finished
                 }
             );
 
-            // Listen for close without reward
+            // Listen for close — this is the terminal event
             const unsubscribeClose = this.rewardedAd.addAdEventListener(
                 AdEventType.CLOSED,
                 () => {
-                    unsubscribeClose();
-                    // If resolve wasn't called by reward, resolve with null
+                    safeResolve(earnedReward); // null if no reward, otherwise the reward
                 }
             );
 
             this.rewardedAd.show().catch((error: any) => {
                 console.error('Failed to show rewarded ad:', error);
-                unsubscribe();
-                unsubscribeClose();
-                resolve(null);
+                safeResolve(null);
             });
+
+            // Safety timeout — if ad never closes, resolve null after 60s
+            setTimeout(() => safeResolve(earnedReward), 60000);
         });
     }
 

@@ -1,55 +1,82 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-    View,
-    Text,
-    StyleSheet,
-    SafeAreaView,
-    StatusBar,
-    TouchableOpacity,
-    ScrollView,
-    Alert,
     ActivityIndicator,
+    Alert,
+  
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, { FadeInUp, FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 
+import PremiumCelebration from '../components/PremiumCelebration';
+import { useI18n } from '../i18n/useI18n';
+import { useGame } from '../contexts/GameContext';
+import adMobService from '../services/adMobService';
+import iapService, {
+    PurchaseState,
+    SUBSCRIPTION_PRICES,
+    SUBSCRIPTION_PRODUCTS,
+} from '../services/iapService';
 import {
-    COLORS,
-    SPACING,
     BORDER_RADIUS,
+    COLORS,
     SHADOWS,
+    SPACING,
     createTextStyle,
 } from '../utils/theme';
-import iapService, {
-    SUBSCRIPTION_PRODUCTS,
-    SUBSCRIPTION_PRICES,
-    PurchaseState
-} from '../services/iapService';
-import adMobService from '../services/adMobService';
-import { useGame } from '../contexts/GameContext';
+
+const NEW_LINE = String.fromCharCode(10);
 
 const RemoveAdsScreen: React.FC = () => {
     const navigation = useNavigation();
     const { playSound, triggerHaptics } = useGame();
+    const { t } = useI18n();
 
     const [purchaseState, setPurchaseState] = useState<PurchaseState>(iapService.getState());
+    const [isIapInitializing, setIsIapInitializing] = useState(true);
+    const [showCelebration, setShowCelebration] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState<string>(SUBSCRIPTION_PRODUCTS.MONTHLY_NO_ADS);
     const pendingActionRef = useRef<'purchase' | 'restore' | null>(null);
     const prevPurchaseStateRef = useRef<PurchaseState>(iapService.getState());
 
     useEffect(() => {
-        // Initialize services
-        adMobService.initialize();
-        iapService.initialize();
+        let isMounted = true;
 
-        // Subscribe to purchase state changes
         const unsubscribe = iapService.subscribe((state) => {
-            setPurchaseState(state);
+            if (isMounted) {
+                setPurchaseState(state);
+            }
         });
 
-        return unsubscribe;
+        const initializeServices = async () => {
+            try {
+                await adMobService.initialize();
+                await iapService.initialize();
+
+                if (isMounted) {
+                    setPurchaseState(iapService.getState());
+                }
+            } finally {
+                if (isMounted) {
+                    setIsIapInitializing(false);
+                }
+            }
+        };
+
+        void initializeServices();
+
+        return () => {
+            isMounted = false;
+            unsubscribe();
+        };
     }, []);
 
     useEffect(() => {
@@ -57,32 +84,25 @@ const RemoveAdsScreen: React.FC = () => {
 
         if (pendingActionRef.current === 'purchase') {
             const purchaseCompleted = !prevState.isPurchased && purchaseState.isPurchased;
-            const purchaseFinishedWithoutSuccess = prevState.isProcessing && !purchaseState.isProcessing && !purchaseState.isPurchased;
+            const purchaseFinishedWithoutSuccess =
+                prevState.isProcessing && !purchaseState.isProcessing && !purchaseState.isPurchased;
 
             if (purchaseCompleted) {
                 pendingActionRef.current = null;
-                (async () => {
-                    await playSound('win');
-                    Alert.alert(
-                        'ðŸŽ‰ ParabÃ©ns!',
-                        'Sua assinatura foi ativada com sucesso! Aproveite o jogo sem anÃºncios.',
-                        [{ text: 'Ã“timo!' }]
-                    );
-                })();
+                setShowCelebration(true);
+                void triggerHaptics('medium');
+                void playSound('win');
             } else if (purchaseFinishedWithoutSuccess) {
                 pendingActionRef.current = null;
                 if (purchaseState.error) {
-                    Alert.alert(
-                        'Erro',
-                        purchaseState.error || 'NÃ£o foi possÃ­vel processar sua compra. Tente novamente.',
-                        [{ text: 'OK' }]
-                    );
+                    // The service hands back an i18n key so the message follows the UI language.
+                    Alert.alert(t('errorTitle'), t(purchaseState.error as any), [{ text: 'OK' }]);
                 }
             }
         }
 
         prevPurchaseStateRef.current = purchaseState;
-    }, [purchaseState, playSound]);
+    }, [playSound, purchaseState, triggerHaptics]);
 
     const handleGoBack = async () => {
         await triggerHaptics('light');
@@ -91,60 +111,74 @@ const RemoveAdsScreen: React.FC = () => {
     };
 
     const handlePurchase = async () => {
+        if (isIapInitializing || pendingActionRef.current) {
+            if (isIapInitializing) {
+                Alert.alert(t('waitTitle'), 'Estamos carregando os precos da assinatura.');
+            }
+            return;
+        }
+
         await triggerHaptics('medium');
         await playSound('button');
 
-        try {
-            pendingActionRef.current = 'purchase';
-            // Use requestSubscription which handles both real and simulated purchases
-            const started = await iapService.requestSubscription(selectedProduct);
-            if (!started) {
-                pendingActionRef.current = null;
+        pendingActionRef.current = 'purchase';
+        const started = await iapService.requestSubscription(selectedProduct);
+
+        if (!started) {
+            pendingActionRef.current = null;
+            const latestState = iapService.getState();
+            if (latestState.error) {
+                // Same as above: the state holds an i18n key, so it must be translated.
+                Alert.alert(t('errorTitle'), t(latestState.error as any), [{ text: 'OK' }]);
             }
-        } catch (error) {
-            Alert.alert('Erro', 'Ocorreu um erro ao processar sua compra.');
         }
     };
 
     const handleRestore = async () => {
+        if (pendingActionRef.current) return; // Block if purchase/restore already in progress
+
         await triggerHaptics('light');
         await playSound('button');
 
+        pendingActionRef.current = 'restore';
         try {
             const success = await iapService.restorePurchases();
 
             if (success) {
-                Alert.alert(
-                    '✅ Restaurado!',
-                    'Sua assinatura foi restaurada com sucesso!',
-                    [{ text: 'Ótimo!' }]
-                );
+                Alert.alert(t('restoredTitle'), t('restoredBody'), [{ text: t('okGreat') }]);
             } else {
-                Alert.alert(
-                    'Nada encontrado',
-                    'Não encontramos uma assinatura ativa para restaurar.',
-                    [{ text: 'OK' }]
-                );
+                Alert.alert(t('nothingFoundTitle'), t('nothingToRestore'), [{ text: 'OK' }]);
             }
         } catch (error) {
-            Alert.alert('Erro', 'Ocorreu um erro ao restaurar compras.');
+            Alert.alert(t('errorTitle'), t('restoreFailedBody'), [{ text: 'OK' }]);
+        } finally {
+            pendingActionRef.current = null;
         }
+    };
+
+    const handleCelebrationContinue = async () => {
+        await triggerHaptics('light');
+        await playSound('button');
+        setShowCelebration(false);
+        navigation.goBack();
     };
 
     const isSubscribed = iapService.isSubscribed();
     const remainingTime = iapService.getRemainingTime();
-    const isLoading = purchaseState.isProcessing;
+    const isLoading = purchaseState.isProcessing || isIapInitializing;
+    const selectedPlanLabel =
+        selectedProduct === SUBSCRIPTION_PRODUCTS.YEARLY_NO_ADS ? t('yearlyPlan') : t('monthlyPlan');
 
     return (
         <LinearGradient colors={['#0A0A0A', '#1A1A2E']} style={styles.container}>
             <StatusBar barStyle="light-content" backgroundColor="#0A0A0A" />
+
             <SafeAreaView style={styles.safeArea}>
-                {/* Header */}
                 <View style={styles.header}>
                     <TouchableOpacity onPress={handleGoBack} style={styles.backButton}>
                         <Ionicons name="arrow-back" size={24} color={COLORS.white} />
                     </TouchableOpacity>
-                    <Text style={styles.headerTitle}>Remover Anúncios</Text>
+                    <Text style={styles.headerTitle}>{t('removeAdsTitle')}</Text>
                     <View style={styles.placeholder} />
                 </View>
 
@@ -153,37 +187,33 @@ const RemoveAdsScreen: React.FC = () => {
                     contentContainerStyle={styles.scrollContent}
                     showsVerticalScrollIndicator={false}
                 >
-                    {/* Hero Section */}
                     <Animated.View entering={FadeInUp.delay(100).duration(600)} style={styles.heroSection}>
                         <View style={styles.iconContainer}>
                             <Ionicons name="rocket" size={60} color={COLORS.gold} />
                         </View>
                         <Text style={styles.heroTitle}>
-                            {isSubscribed ? '🎉 Você é Premium!' : '✨ Jogue sem interrupções!'}
+                            {isSubscribed ? t('youArePremium') : t('heroNoInterruptions')}
                         </Text>
                         <Text style={styles.heroSubtitle}>
                             {isSubscribed
-                                ? `Aproveite o jogo sem anúncios!\n${remainingTime}`
-                                : 'Remova todos os anúncios e tenha uma experiência premium.'
+                                ? t('premiumEnjoyBody').replace('{br}', NEW_LINE).replace('{time}', remainingTime)
+                                : t('heroNoInterruptionsBody')
                             }
                         </Text>
                     </Animated.View>
 
                     {!isSubscribed && (
                         <>
-                            {/* Benefits */}
                             <Animated.View entering={FadeInUp.delay(200).duration(600)} style={styles.benefitsSection}>
-                                <Text style={styles.sectionTitle}>Benefícios Premium</Text>
+                                <Text style={styles.sectionTitle}>{t('premiumBenefits')}</Text>
 
                                 <View style={styles.benefitItem}>
                                     <View style={styles.benefitIcon}>
                                         <Ionicons name="close-circle" size={24} color={COLORS.error} />
                                     </View>
                                     <View style={styles.benefitText}>
-                                        <Text style={styles.benefitTitle}>Sem anúncios</Text>
-                                        <Text style={styles.benefitDescription}>
-                                            Jogue sem interrupções de vídeos ou banners
-                                        </Text>
+                                        <Text style={styles.benefitTitle}>{t('benefitNoAds')}</Text>
+                                        <Text style={styles.benefitDescription}>{t('benefitNoAdsDesc')}</Text>
                                     </View>
                                 </View>
 
@@ -192,10 +222,8 @@ const RemoveAdsScreen: React.FC = () => {
                                         <Ionicons name="flash" size={24} color={COLORS.warning} />
                                     </View>
                                     <View style={styles.benefitText}>
-                                        <Text style={styles.benefitTitle}>Experiência fluida</Text>
-                                        <Text style={styles.benefitDescription}>
-                                            Transições suaves entre partidas
-                                        </Text>
+                                        <Text style={styles.benefitTitle}>{t('benefitSmooth')}</Text>
+                                        <Text style={styles.benefitDescription}>{t('benefitSmoothDesc')}</Text>
                                     </View>
                                 </View>
 
@@ -204,19 +232,15 @@ const RemoveAdsScreen: React.FC = () => {
                                         <Ionicons name="heart" size={24} color={COLORS.xColor} />
                                     </View>
                                     <View style={styles.benefitText}>
-                                        <Text style={styles.benefitTitle}>Apoie o desenvolvedor</Text>
-                                        <Text style={styles.benefitDescription}>
-                                            Ajude a manter o jogo atualizado
-                                        </Text>
+                                        <Text style={styles.benefitTitle}>{t('benefitSupport')}</Text>
+                                        <Text style={styles.benefitDescription}>{t('benefitSupportDesc')}</Text>
                                     </View>
                                 </View>
                             </Animated.View>
 
-                            {/* Subscription Options */}
                             <Animated.View entering={FadeInUp.delay(300).duration(600)} style={styles.plansSection}>
-                                <Text style={styles.sectionTitle}>Escolha seu plano</Text>
+                                <Text style={styles.sectionTitle}>{t('choosePlan')}</Text>
 
-                                {/* Monthly Plan */}
                                 <TouchableOpacity
                                     style={[
                                         styles.planCard,
@@ -224,18 +248,21 @@ const RemoveAdsScreen: React.FC = () => {
                                     ]}
                                     onPress={() => setSelectedProduct(SUBSCRIPTION_PRODUCTS.MONTHLY_NO_ADS)}
                                     activeOpacity={0.8}
+                                    disabled={isLoading}
                                 >
                                     <View style={styles.planInfo}>
-                                        <Text style={styles.planTitle}>Mensal</Text>
+                                        <Text style={styles.planTitle}>{t('planMonthlyShort')}</Text>
                                         <Text style={styles.planDescription}>
-                                            {SUBSCRIPTION_PRICES[SUBSCRIPTION_PRODUCTS.MONTHLY_NO_ADS].description}
+                                            {t('planMonthlyDesc')}
                                         </Text>
                                     </View>
                                     <View style={styles.planPrice}>
                                         <Text style={styles.priceText}>
-                                            {SUBSCRIPTION_PRICES[SUBSCRIPTION_PRODUCTS.MONTHLY_NO_ADS].price}
+                                            {isIapInitializing
+                                                ? '...'
+                                                : SUBSCRIPTION_PRICES[SUBSCRIPTION_PRODUCTS.MONTHLY_NO_ADS].price}
                                         </Text>
-                                        <Text style={styles.periodText}>/mês</Text>
+                                        <Text style={styles.periodText}>{t('perMonthSuffix')}</Text>
                                     </View>
                                     {selectedProduct === SUBSCRIPTION_PRODUCTS.MONTHLY_NO_ADS && (
                                         <View style={styles.selectedIndicator}>
@@ -244,7 +271,6 @@ const RemoveAdsScreen: React.FC = () => {
                                     )}
                                 </TouchableOpacity>
 
-                                {/* Yearly Plan */}
                                 <TouchableOpacity
                                     style={[
                                         styles.planCard,
@@ -252,21 +278,24 @@ const RemoveAdsScreen: React.FC = () => {
                                     ]}
                                     onPress={() => setSelectedProduct(SUBSCRIPTION_PRODUCTS.YEARLY_NO_ADS)}
                                     activeOpacity={0.8}
+                                    disabled={isLoading}
                                 >
                                     <View style={styles.bestValueBadge}>
-                                        <Text style={styles.bestValueText}>MELHOR VALOR</Text>
+                                        <Text style={styles.bestValueText}>{t('bestValue')}</Text>
                                     </View>
                                     <View style={styles.planInfo}>
-                                        <Text style={styles.planTitle}>Anual</Text>
+                                        <Text style={styles.planTitle}>{t('planYearlyShort')}</Text>
                                         <Text style={styles.planDescription}>
-                                            {SUBSCRIPTION_PRICES[SUBSCRIPTION_PRODUCTS.YEARLY_NO_ADS].description}
+                                            {t('planYearlyDesc')}
                                         </Text>
                                     </View>
                                     <View style={styles.planPrice}>
                                         <Text style={styles.priceText}>
-                                            {SUBSCRIPTION_PRICES[SUBSCRIPTION_PRODUCTS.YEARLY_NO_ADS].price}
+                                            {isIapInitializing
+                                                ? '...'
+                                                : SUBSCRIPTION_PRICES[SUBSCRIPTION_PRODUCTS.YEARLY_NO_ADS].price}
                                         </Text>
-                                        <Text style={styles.periodText}>/ano</Text>
+                                        <Text style={styles.periodText}>{t('perYearSuffix')}</Text>
                                     </View>
                                     {selectedProduct === SUBSCRIPTION_PRODUCTS.YEARLY_NO_ADS && (
                                         <View style={styles.selectedIndicator}>
@@ -276,20 +305,19 @@ const RemoveAdsScreen: React.FC = () => {
                                 </TouchableOpacity>
                             </Animated.View>
 
-                            {/* Purchase Button */}
                             <Animated.View entering={FadeInDown.delay(400).duration(600)} style={styles.purchaseSection}>
                                 <TouchableOpacity
                                     style={[styles.purchaseButton, isLoading && styles.purchaseButtonDisabled]}
                                     onPress={handlePurchase}
                                     disabled={isLoading}
-                                    activeOpacity={0.8}
+                                    activeOpacity={0.85}
                                 >
                                     {isLoading ? (
                                         <ActivityIndicator color={COLORS.white} />
                                     ) : (
                                         <>
                                             <Ionicons name="diamond" size={24} color={COLORS.white} />
-                                            <Text style={styles.purchaseButtonText}>Assinar Agora</Text>
+                                            <Text style={styles.purchaseButtonText}>{t('subscribeNow')}</Text>
                                         </>
                                     )}
                                 </TouchableOpacity>
@@ -298,14 +326,12 @@ const RemoveAdsScreen: React.FC = () => {
                                     style={styles.restoreButton}
                                     onPress={handleRestore}
                                     disabled={isLoading}
-                                    activeOpacity={0.7}
+                                    activeOpacity={0.75}
                                 >
-                                    <Text style={styles.restoreButtonText}>Restaurar compras</Text>
+                                    <Text style={styles.restoreButtonText}>{t('restorePurchasesAction')}</Text>
                                 </TouchableOpacity>
 
-                                <Text style={styles.legalText}>
-                                    A assinatura será renovada automaticamente a menos que seja cancelada pelo menos 24 horas antes do fim do período atual.
-                                </Text>
+                                <Text style={styles.legalText}>{t('subscriptionRenewalNote')}</Text>
                             </Animated.View>
                         </>
                     )}
@@ -314,18 +340,23 @@ const RemoveAdsScreen: React.FC = () => {
                         <Animated.View entering={FadeInUp.delay(200).duration(600)} style={styles.subscribedSection}>
                             <View style={styles.subscribedCard}>
                                 <Ionicons name="checkmark-circle" size={48} color={COLORS.success} />
-                                <Text style={styles.subscribedTitle}>Assinatura Ativa</Text>
+                                <Text style={styles.subscribedTitle}>{t('activeSubscription')}</Text>
                                 <Text style={styles.subscribedInfo}>
-                                    Plano: {purchaseState.productId === SUBSCRIPTION_PRODUCTS.YEARLY_NO_ADS ? 'Anual' : 'Mensal'}
+                                    Plano:{' '}
+                                    {purchaseState.productId === SUBSCRIPTION_PRODUCTS.YEARLY_NO_ADS ? 'Anual' : 'Mensal'}
                                 </Text>
-                                <Text style={styles.subscribedExpiry}>
-                                    {remainingTime}
-                                </Text>
+                                <Text style={styles.subscribedExpiry}>{remainingTime}</Text>
                             </View>
                         </Animated.View>
                     )}
                 </ScrollView>
             </SafeAreaView>
+
+            <PremiumCelebration
+                visible={showCelebration}
+                planLabel={selectedPlanLabel}
+                onContinue={handleCelebrationContinue}
+            />
         </LinearGradient>
     );
 };

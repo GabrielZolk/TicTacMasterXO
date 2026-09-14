@@ -38,14 +38,21 @@ const RemoveAdsButton: React.FC<RemoveAdsButtonProps> = ({
     const { playSound, triggerHaptics } = useGame();
     const { t } = useI18n();
     const glowAnimation = useSharedValue(0);
+    const [isSubscribed, setIsSubscribed] = React.useState(iapService.isSubscribed());
 
-    // Check if already subscribed
-    const isSubscribed = iapService.isSubscribed();
+    React.useEffect(() => {
+        const syncSubscription = async () => {
+            await iapService.initialize();
+            setIsSubscribed(iapService.isSubscribed());
+        };
+        syncSubscription();
 
-    // Skip rendering if already subscribed
-    if (isSubscribed) {
-        return null;
-    }
+        const unsubscribe = iapService.subscribe(() => {
+            setIsSubscribed(iapService.isSubscribed());
+        });
+
+        return unsubscribe;
+    }, []);
 
     // Start glow animation
     React.useEffect(() => {
@@ -68,6 +75,12 @@ const RemoveAdsButton: React.FC<RemoveAdsButtonProps> = ({
         shadowOpacity: 0.3 + (glowAnimation.value * 0.4),
         shadowRadius: 4 + (glowAnimation.value * 6),
     }));
+
+    // Render null only after all hooks have run, otherwise React can crash
+    // when premium state flips from false to true during a live render cycle.
+    if (isSubscribed) {
+        return null;
+    }
 
     if (variant === 'compact') {
         return (

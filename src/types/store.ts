@@ -71,6 +71,9 @@ export interface SymbolStoreItem extends StoreItem {
     playerX: string; // emoji ou caractere
     playerO: string; // emoji ou caractere
     animated?: boolean;
+    // Colour/glow treatment applied to the pieces (see GameCell). Several
+    // packs already ship a `style`; it was missing from this type.
+    style?: 'default' | 'theme' | 'neon' | 'gold' | 'fire' | 'ice' | 'matrix';
   };
 }
 
@@ -109,6 +112,7 @@ export interface PlayerInventory {
   equippedSymbols?: string;
   equippedEffect?: string;
   equippedAvatar?: string;
+  equippedBoardSkin?: string;
 }
 
 // Interface para dados da loja
@@ -118,6 +122,10 @@ export interface StoreData {
   transactions: Transaction[];
   lastDailyReward?: number;
   consecutiveDays?: number;
+  /** Rewarded ads watched today (resets on a new local calendar day). */
+  adsWatchedToday?: number;
+  /** Local date key (YYYY-MM-DD) the counter above belongs to. */
+  adsWatchedDate?: string;
 }
 
 // Constantes de recompensa
@@ -126,10 +134,14 @@ export const REWARD_AMOUNTS = {
   WIN_SPECIAL_MODE: 10,
   WIN_STREAK_BONUS: 3, // por vitória na sequência
   DAILY_LOGIN: 50,
-  WATCH_AD: 25,
+  WATCH_AD: 40,
   COMPLETE_ACHIEVEMENT: 100,
   FIRST_WIN_OF_DAY: 20,
 } as const;
+
+/** Max rewarded ads that pay out per day. Keeps the economy (and the paid star
+ *  packs) meaningful — without it a player could farm the whole store for free. */
+export const MAX_REWARDED_ADS_PER_DAY = 5;
 
 // Cores por raridade
 export const RARITY_COLORS = {

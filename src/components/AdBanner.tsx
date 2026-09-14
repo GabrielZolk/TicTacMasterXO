@@ -2,8 +2,9 @@
 // Wraps react-native-google-mobile-ads BannerAd
 
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, Platform } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import adMobService from '../services/adMobService';
+import iapService from '../services/iapService';
 
 // Import BannerAd components conditionally
 let BannerAd: any = null;
@@ -27,11 +28,20 @@ const AdBanner: React.FC<AdBannerProps> = ({ size = 'BANNER', style }) => {
     const [isLoaded, setIsLoaded] = useState(false);
 
     useEffect(() => {
-        const checkAdsStatus = async () => {
+        const syncAdsStatus = async () => {
             await adMobService.initialize();
+            await iapService.initialize();
             setShowAds(adMobService.shouldShowAds());
         };
-        checkAdsStatus();
+        syncAdsStatus();
+
+        // Re-check banner visibility when premium state changes.
+        const unsubscribe = iapService.subscribe(() => {
+            setShowAds(adMobService.shouldShowAds());
+            setIsLoaded(false);
+        });
+
+        return unsubscribe;
     }, []);
 
     // Don't render if ads shouldn't be shown or component not available
