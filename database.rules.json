@@ -1,0 +1,57 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "rooms": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "public_lobby": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "matchmaking_queue": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "spectate_rooms": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "friend_requests": {
+      ".read": "auth != null",
+      "$targetId": {
+        "$senderId": {
+          ".write": "auth != null && auth.uid === $senderId || auth.uid === $targetId"
+        }
+      }
+    },
+    "friends": {
+      ".read": "auth != null",
+      "$ownerId": {
+        ".write": "auth != null"
+      }
+    },
+    "leaderboard": {
+      ".read": "auth != null",
+      ".indexOn": ["points"],
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "players": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "referrals": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "admin": {
+      ".read": "auth != null",
+      ".write": false
+    }
+  }
+}
