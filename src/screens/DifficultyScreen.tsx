@@ -1,9 +1,10 @@
+import { SafeAreaView } from 'react-native-safe-area-context';
 import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
+
   StatusBar,
   TouchableOpacity,
   ScrollView,
@@ -110,7 +111,7 @@ const DifficultyScreen: React.FC = () => {
   };
 
   return (
-    <LinearGradient colors={COLORS.primaryGradient} style={styles.container}>
+    <LinearGradient colors={COLORS.primaryGradient as [string, string, ...string[]]} style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.darkBackground} />
       <SafeAreaView style={styles.safeArea}>
         

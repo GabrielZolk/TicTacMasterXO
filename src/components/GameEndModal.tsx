@@ -10,10 +10,13 @@ import {
   Easing,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+
+type IoniconName = keyof typeof Ionicons.glyphMap;
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, SHADOWS } from '../utils/theme';
 import { useTheme } from '../hooks/useTheme';
 import { useI18n } from '../i18n/useI18n';
+import { GameRewards } from '../types/game';
 
 const { width, height } = Dimensions.get('window');
 
@@ -25,6 +28,14 @@ interface GameEndModalProps {
   onPlayAgain: () => void;
   onViewBoard: () => void;
   onClose: () => void;
+  playAgainLabel?: string; // Override button text (e.g., "Proxima Rodada")
+  /** Shows the "share result" button when provided. */
+  onShare?: () => void;
+  /**
+   * What the round paid out. Everything in it was already being credited and
+   * none of it was shown, so a win read as if it paid nothing.
+   */
+  rewards?: GameRewards | null;
 }
 
 const GameEndModal: React.FC<GameEndModalProps> = ({
@@ -32,12 +43,15 @@ const GameEndModal: React.FC<GameEndModalProps> = ({
   winner,
   isDraw,
   gameMode,
+  playAgainLabel,
   onPlayAgain,
   onViewBoard,
   onClose,
+  onShare,
+  rewards,
 }) => {
   const { colors } = useTheme();
-  const { t } = useI18n();
+  const { t, tc } = useI18n();
   // Use useRef to persist animation values across renders
   const scaleAnim = React.useRef(new Animated.Value(0)).current;
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
@@ -105,6 +119,26 @@ const GameEndModal: React.FC<GameEndModalProps> = ({
 
   const resultInfo = getResultInfo();
 
+  // One pill per thing actually earned. A payout of zero is left out rather than
+  // shown as "+0", so a loss doesn't advertise an empty reward row.
+  const rewardChips: { emoji: string; value: string; color: string }[] = [];
+  if (rewards) {
+    if (rewards.stars > 0) rewardChips.push({ emoji: '⭐', value: `+${rewards.stars}`, color: COLORS.gold });
+    if (rewards.xp > 0) rewardChips.push({ emoji: '⚡', value: `+${rewards.xp} XP`, color: COLORS.xColor });
+    if (rewards.rankedPoints > 0) rewardChips.push({ emoji: '🏆', value: `+${rewards.rankedPoints}`, color: COLORS.info });
+    if (rewards.chest) rewardChips.push({ emoji: '🎁', value: t('chest'), color: COLORS.warning });
+    if (rewards.leveledUp) {
+      rewardChips.push({
+        emoji: '🎖️',
+        value: t('levelUpTo').replace('{level}', String(rewards.newLevel)),
+        color: COLORS.success,
+      });
+    }
+    rewards.achievements.forEach((id) => {
+      rewardChips.push({ emoji: '🏅', value: tc(`achv.${id}.title`, id), color: COLORS.success });
+    });
+  }
+
   if (!visible) return null;
 
   return (
@@ -130,7 +164,7 @@ const GameEndModal: React.FC<GameEndModalProps> = ({
               <View style={[styles.iconContainer, { backgroundColor: resultInfo.color + '20' }]}>
                 <Text style={styles.emoji}>{resultInfo.emoji}</Text>
                 <Ionicons 
-                  name={resultInfo.icon} 
+                  name={resultInfo.icon as IoniconName} 
                   size={32} 
                   color={resultInfo.color}
                   style={styles.headerIcon}
@@ -166,16 +200,37 @@ const GameEndModal: React.FC<GameEndModalProps> = ({
               )}
             </View>
 
+            {/* What the round paid out. Same pill language as the game-info row
+                above, so it reads as part of the card and not as a banner. */}
+            {rewardChips.length > 0 && (
+              <View style={styles.rewards}>
+                <Text style={[styles.rewardsTitle, { color: colors.textSecondary }]}>
+                  {t('rewardsEarned')}
+                </Text>
+                <View style={styles.rewardsRow}>
+                  {rewardChips.map((chip, i) => (
+                    <View
+                      key={i}
+                      style={[styles.rewardChip, { backgroundColor: chip.color + '1F', borderColor: chip.color + '55' }]}
+                    >
+                      <Text style={styles.rewardEmoji}>{chip.emoji}</Text>
+                      <Text style={[styles.rewardValue, { color: chip.color }]}>{chip.value}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+
             {/* Action Buttons */}
             <View style={styles.buttonContainer}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.button, styles.primaryButton, { backgroundColor: COLORS.xColor }]}
                 onPress={onPlayAgain}
                 activeOpacity={0.8}
               >
-                <Ionicons name="refresh-outline" size={20} color="white" />
+                <Ionicons name={playAgainLabel ? "arrow-forward" : "refresh-outline"} size={20} color="white" />
                 <Text style={styles.primaryButtonText}>
-                  {t('actions.playAgain')}
+                  {playAgainLabel || t('actions.playAgain')}
                 </Text>
               </TouchableOpacity>
 
@@ -189,6 +244,20 @@ const GameEndModal: React.FC<GameEndModalProps> = ({
                   {t('actions.viewBoard')}
                 </Text>
               </TouchableOpacity>
+
+              {/* Shareable emoji result card — the main organic-growth hook */}
+              {onShare && (
+                <TouchableOpacity
+                  style={[styles.button, styles.secondaryButton, { borderColor: COLORS.gold }]}
+                  onPress={onShare}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="share-social-outline" size={20} color={COLORS.gold} />
+                  <Text style={[styles.secondaryButtonText, { color: COLORS.gold }]}>
+                    {t('shareResult')}
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* Close Button */}
@@ -263,6 +332,40 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 24,
     flexWrap: 'wrap',
+  },
+  rewards: {
+    alignItems: 'center',
+    marginTop: -12,
+    marginBottom: 22,
+  },
+  rewardsTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 8,
+  },
+  rewardsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  rewardChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 5,
+  },
+  rewardEmoji: {
+    fontSize: 14,
+  },
+  rewardValue: {
+    fontSize: 14,
+    fontWeight: '700',
   },
   gameInfoItem: {
     flexDirection: 'row',

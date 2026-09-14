@@ -8,7 +8,7 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 
-import { Player, GameMode } from '../types/game';
+import { Player, OpponentType } from '../types/game';
 import { useI18n } from '../i18n/useI18n';
 import { 
   COLORS, 
@@ -23,7 +23,10 @@ interface GameStatusDisplayProps {
   winner: Player | null;
   isDraw: boolean;
   currentPlayer: Player;
-  mode: GameMode;
+  /** Who the human is playing against. The body branches on 'ai' to decide
+   *  between "You won" and "Player X won" wording. This was typed as GameMode
+   *  by mistake, so every comparison below was dead (a GameMode is never 'ai'). */
+  opponent: OpponentType;
   isGameActive: boolean;
 }
 
@@ -31,7 +34,7 @@ const GameStatusDisplay: React.FC<GameStatusDisplayProps> = ({
   winner,
   isDraw,
   currentPlayer,
-  mode,
+  opponent,
   isGameActive,
 }) => {
   const { t } = useI18n();
@@ -52,7 +55,7 @@ const GameStatusDisplay: React.FC<GameStatusDisplayProps> = ({
 
   const getStatusText = (): string => {
     if (winner) {
-      if (mode === 'vsAI') {
+      if (opponent === 'ai') {
         if (winner === 'X') {
           return t('gameStatus.win'); // You Won! 🎉
         } else {
@@ -67,7 +70,7 @@ const GameStatusDisplay: React.FC<GameStatusDisplayProps> = ({
       return t('gameStatus.draw'); // It's a Draw! 🤝
     }
     
-    if (mode === 'vsAI') {
+    if (opponent === 'ai') {
       if (currentPlayer === 'X') {
         return t('playerTurn', { player: 'X' });
       } else {
@@ -80,7 +83,7 @@ const GameStatusDisplay: React.FC<GameStatusDisplayProps> = ({
 
   const getStatusColor = (): string => {
     if (winner) {
-      if (mode === 'vsAI') {
+      if (opponent === 'ai') {
         return winner === 'X' ? COLORS.success : COLORS.error;
       }
       return getPlayerColor(winner);
@@ -90,7 +93,7 @@ const GameStatusDisplay: React.FC<GameStatusDisplayProps> = ({
       return COLORS.warning;
     }
     
-    if (mode === 'vsAI' && currentPlayer === 'O') {
+    if (opponent === 'ai' && currentPlayer === 'O') {
       return COLORS.oColor;
     }
     
@@ -99,7 +102,7 @@ const GameStatusDisplay: React.FC<GameStatusDisplayProps> = ({
 
   const getBackgroundColor = (): string => {
     if (winner) {
-      if (mode === 'vsAI') {
+      if (opponent === 'ai') {
         return winner === 'X' ? COLORS.success + '20' : COLORS.error + '20';
       }
       return getPlayerColor(winner) + '20';
@@ -114,7 +117,7 @@ const GameStatusDisplay: React.FC<GameStatusDisplayProps> = ({
 
   const getBorderColor = (): string => {
     if (winner) {
-      if (mode === 'vsAI') {
+      if (opponent === 'ai') {
         return winner === 'X' ? COLORS.success : COLORS.error;
       }
       return getPlayerColor(winner);
@@ -129,7 +132,7 @@ const GameStatusDisplay: React.FC<GameStatusDisplayProps> = ({
 
   const getStatusIcon = (): string => {
     if (winner) {
-      if (mode === 'vsAI') {
+      if (opponent === 'ai') {
         return winner === 'X' ? '🎉' : '🤖';
       }
       return winner === 'X' ? '✗' : '○';
@@ -139,7 +142,7 @@ const GameStatusDisplay: React.FC<GameStatusDisplayProps> = ({
       return '🤝';
     }
     
-    if (mode === 'vsAI' && currentPlayer === 'O') {
+    if (opponent === 'ai' && currentPlayer === 'O') {
       return '🤔';
     }
     

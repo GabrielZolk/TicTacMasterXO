@@ -83,6 +83,12 @@ const BlitzTimer: React.FC<BlitzTimerProps> = ({
         let hasTriggeredTimeout = false;
         let intervalId: ReturnType<typeof setInterval> | null = null;
 
+        // Anchor the countdown to when the turn actually started. Subtracting a
+        // fixed 0.1 per tick drifted (intervals never fire exactly on time), so
+        // the displayed clock slowly diverged from the real deadline.
+        const turnStart = gameState.currentTurnStartTime || Date.now();
+        const deadline = turnStart + gameState.timePerMove * 1000;
+
         intervalId = setInterval(() => {
             // Double-check we should still be running
             if (gameEndedLocallyRef.current || hasTriggeredTimeout) {
@@ -90,48 +96,44 @@ const BlitzTimer: React.FC<BlitzTimerProps> = ({
                 return;
             }
 
-            setTimeRemaining((prev) => {
-                const newTime = Math.max(0, prev - 0.1);
+            const remaining = Math.max(0, (deadline - Date.now()) / 1000);
 
-                // Update color progress (0 = green, 1 = red)
-                colorProgress.value = 1 - (newTime / gameState.timePerMove);
+            // Update color progress (0 = green, 1 = red)
+            colorProgress.value = 1 - (remaining / gameState.timePerMove);
 
-                // Start pulsing when time is low (only if time allows for it)
-                const pulseThreshold = Math.min(2, gameState.timePerMove * 0.5);
-                if (newTime <= pulseThreshold && newTime > 0) {
-                    pulseAnimation.value = withRepeat(
-                        withSequence(
-                            withTiming(1.2, { duration: 150 }),
-                            withTiming(1, { duration: 150 })
-                        ),
-                        -1
-                    );
-                }
+            // Start pulsing when time is low (only if time allows for it)
+            const pulseThreshold = Math.min(2, gameState.timePerMove * 0.5);
+            if (remaining <= pulseThreshold && remaining > 0) {
+                pulseAnimation.value = withRepeat(
+                    withSequence(
+                        withTiming(1.2, { duration: 150 }),
+                        withTiming(1, { duration: 150 })
+                    ),
+                    -1
+                );
+            }
 
-                // Check if time is up and we haven't already called timeout
-                if (newTime <= 0 && !timeoutCalledRef.current && !hasTriggeredTimeout && !gameEndedLocallyRef.current) {
-                    timeoutCalledRef.current = true;
-                    hasTriggeredTimeout = true;
-                    gameEndedLocallyRef.current = true; // Mark that we triggered the game end
+            setTimeRemaining(remaining);
 
-                    // Clear the interval immediately to prevent any more updates
-                    if (intervalId) clearInterval(intervalId);
+            // Time up. onTimeout is called HERE, not inside the setState
+            // updater — updaters must be pure, and calling a parent callback
+            // from one triggers a cross-component update during render.
+            if (remaining <= 0 && !timeoutCalledRef.current && !hasTriggeredTimeout && !gameEndedLocallyRef.current) {
+                timeoutCalledRef.current = true;
+                hasTriggeredTimeout = true;
+                gameEndedLocallyRef.current = true;
 
-                    // Call timeout synchronously - no need for setTimeout since we've locked everything
-                    console.log(`⏱️ BlitzTimer: Calling timeout for player ${currentPlayer}`);
-                    onTimeout(currentPlayer);
+                if (intervalId) clearInterval(intervalId);
 
-                    return 0;
-                }
-
-                return newTime;
-            });
+                console.log(`⏱️ BlitzTimer: Calling timeout for player ${currentPlayer}`);
+                onTimeout(currentPlayer);
+            }
         }, 100);
 
         return () => {
             if (intervalId) clearInterval(intervalId);
         };
-    }, [currentPlayer, isGameOver, gameState.winner, gameState.timedOut, gameState.timePerMove, onTimeout, isPaused]);
+    }, [currentPlayer, isGameOver, gameState.winner, gameState.timedOut, gameState.timePerMove, gameState.currentTurnStartTime, onTimeout, isPaused]);
 
     const animatedContainerStyle = useAnimatedStyle(() => ({
         transform: [{ scale: pulseAnimation.value }],

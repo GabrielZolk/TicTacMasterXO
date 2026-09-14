@@ -22,10 +22,22 @@ import {
   SurvivalGameState,
   BlitzGameState,
   ReverseGameState,
+  BombGameState,
+  MirrorGameState,
+  MadGameState,
+  MadMutationType,
+  GobbleGameState,
+  GobbleSize,
+  GameRewards,
 } from '../types/game';
 import { AIPlayer } from '../utils/aiPlayer';
 import { soundManager, SoundUtils } from '../utils/soundManager';
 import { storeService } from '../services/storeService';
+import { battlepassService } from '../services/battlepassService';
+import { rankedService } from '../services/rankedService';
+import { challengeService } from '../services/challengeService';
+import { achievementService } from '../services/achievementService';
+import { chestService } from '../services/chestService';
 import {
   createBoard,
   createBigBoard,
@@ -107,9 +119,136 @@ const createInitialGameState = (mode: GameMode): ExtendedGameState => {
         ...initialGameState,
       } as ReverseGameState;
 
+    case 'bomb': {
+      const bomb = pickRandomBombCell(initialGameState.board, null);
+      return {
+        ...initialGameState,
+        bombRow: bomb.row,
+        bombCol: bomb.col,
+        lastExplosion: undefined,
+        explosionCount: 0,
+      } as BombGameState;
+    }
+
+    case 'mirror':
+      return {
+        ...initialGameState,
+        lastMirrorCell: undefined,
+      } as MirrorGameState;
+
+    case 'mad':
+      return {
+        ...initialGameState,
+        movesUntilMutation: MAD_MOVES_PER_MUTATION,
+        lastMutation: undefined,
+        frozenCell: undefined,
+        frozenTurnsLeft: 0,
+        mutationCount: 0,
+      } as MadGameState;
+
+    case 'gobble':
+      return {
+        ...initialGameState,
+        cellSizes: [
+          [null, null, null],
+          [null, null, null],
+          [null, null, null],
+        ],
+        piecesLeft: {
+          X: { 1: 2, 2: 2, 3: 2 },
+          O: { 1: 2, 2: 2, 3: 2 },
+        },
+        selectedSize: 1,
+        lastGobble: undefined,
+      } as GobbleGameState;
+
     default:
       return { ...initialGameState };
   }
+};
+
+/** Moves between mutations in Mad mode. */
+const MAD_MOVES_PER_MUTATION = 3;
+/** Turns a frozen cell stays blocked in Mad mode. */
+const MAD_FREEZE_TURNS = 2;
+
+/** Rotates a square board 90° clockwise. */
+const rotateBoard = (board: Cell[][]): Cell[][] => {
+  const size = board.length;
+  const out: Cell[][] = Array.from({ length: size }, () => Array(size).fill(null));
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      out[c][size - 1 - r] = board[r][c];
+    }
+  }
+  return out;
+};
+
+/**
+ * Applies one random Mad-mode mutation to the board.
+ * Returns the new board plus which mutation ran (and the frozen cell, if any).
+ */
+const applyMadMutation = (
+  board: Cell[][]
+): { board: Cell[][]; type: MadMutationType; frozenCell?: { row: number; col: number } } => {
+  const size = board.length;
+
+  const occupied: { row: number; col: number }[] = [];
+  const empty: { row: number; col: number }[] = [];
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (board[r][c]) occupied.push({ row: r, col: c });
+      else empty.push({ row: r, col: c });
+    }
+  }
+
+  // Only offer mutations that can actually do something right now
+  const options: MadMutationType[] = ['rotate'];
+  const xCells = occupied.filter(p => board[p.row][p.col] === 'X');
+  const oCells = occupied.filter(p => board[p.row][p.col] === 'O');
+  if (xCells.length > 0 && oCells.length > 0) options.push('swap');
+  if (empty.length > 1) options.push('freeze');
+
+  const type = options[Math.floor(Math.random() * options.length)];
+
+  if (type === 'rotate') {
+    return { board: rotateBoard(board), type };
+  }
+
+  if (type === 'swap') {
+    const a = xCells[Math.floor(Math.random() * xCells.length)];
+    const b = oCells[Math.floor(Math.random() * oCells.length)];
+    const next = board.map(row => [...row]);
+    const tmp = next[a.row][a.col];
+    next[a.row][a.col] = next[b.row][b.col];
+    next[b.row][b.col] = tmp;
+    return { board: next, type };
+  }
+
+  // freeze
+  const target = empty[Math.floor(Math.random() * empty.length)];
+  return { board: board.map(row => [...row]), type, frozenCell: target };
+};
+
+/**
+ * Picks a random empty cell to hide the bomb in. Never reuses `avoid` (the cell
+ * that just exploded) so the same square can't blow up twice in a row.
+ * Returns {row:-1,col:-1} when there is nowhere left to hide it.
+ */
+const pickRandomBombCell = (
+  board: Cell[][],
+  avoid: { row: number; col: number } | null
+): { row: number; col: number } => {
+  const candidates: { row: number; col: number }[] = [];
+  for (let r = 0; r < board.length; r++) {
+    for (let c = 0; c < board[r].length; c++) {
+      if (board[r][c] !== null) continue;
+      if (avoid && avoid.row === r && avoid.col === c) continue;
+      candidates.push({ row: r, col: c });
+    }
+  }
+  if (candidates.length === 0) return { row: -1, col: -1 };
+  return candidates[Math.floor(Math.random() * candidates.length)];
 };
 
 const initialGameConfig: GameConfig = {
@@ -132,7 +271,7 @@ const initialGameStats: GameStats = {
 
 // Action types
 type GameAction =
-  | { type: 'MAKE_MOVE'; payload: { row: number; col: number } }
+  | { type: 'MAKE_MOVE'; payload: { row: number; col: number; gravityFinalRow?: number; expectedPlayer?: Player; forcedPlayer?: Player } }
   | { type: 'RESTART_GAME' }
   | { type: 'NEW_ROUND' }
   | { type: 'SET_MODE'; payload: GameMode }
@@ -151,14 +290,16 @@ type GameAction =
   | { type: 'LOAD_STORED_DATA'; payload: { config: GameConfig; stats: GameStats } }
   | { type: 'BLITZ_TIMEOUT'; payload: { player: Player } }
   | { type: 'SET_BLITZ_TIME'; payload: number }
-  | { type: 'GRAVITY_EARTHQUAKE' }
-  | { type: 'COMPLETE_GRAVITY_FALL' };
+  | { type: 'COMPLETE_GRAVITY_FALL' }
+  | { type: 'SELECT_GOBBLE_SIZE'; payload: GobbleSize }
+  | { type: 'UNDO_LAST_MOVES' } // Undo last human move + AI response
+  | { type: 'BLITZ_ADD_TIME'; payload: number }; // Add seconds to current turn
 
 interface GameContextValue {
   gameState: ExtendedGameState;
   gameConfig: GameConfig;
   gameStats: GameStats;
-  makeMove: (row: number, col: number) => void;
+  makeMove: (row: number, col: number, gravityFinalRow?: number) => void;
   restartGame: () => void;
   newRound: () => void;
   setGameMode: (mode: GameMode) => void;
@@ -180,58 +321,27 @@ interface GameContextValue {
   handleBlitzTimeout: (player: Player) => void;
   setBlitzTime: (seconds: number) => void;
   // Gravity mode functions
-  triggerEarthquake: () => void;
   completeGravityFall: () => void;
+  // Boost: undo & time
+  undoLastMoves: () => void;
+  addBlitzTime: (seconds: number) => void;
+  selectGobbleSize: (size: GobbleSize) => void;
+  /** What the round that just ended paid out, or null before any result. */
+  lastRewards: GameRewards | null;
+  clearLastRewards: () => void;
 }
 
 const GameContext = createContext<GameContextValue | undefined>(undefined);
 
-// Game logic utilities
-const checkWinCondition = (board: Cell[][]): WinningLine | null => {
-  // Check rows
-  for (let i = 0; i < 3; i++) {
-    if (board[i][0] && board[i][0] === board[i][1] && board[i][1] === board[i][2]) {
-      return {
-        type: 'row',
-        index: i,
-        cells: [{ row: i, col: 0 }, { row: i, col: 1 }, { row: i, col: 2 }],
-      };
-    }
-  }
-
-  // Check columns
-  for (let i = 0; i < 3; i++) {
-    if (board[0][i] && board[0][i] === board[1][i] && board[1][i] === board[2][i]) {
-      return {
-        type: 'col',
-        index: i,
-        cells: [{ row: 0, col: i }, { row: 1, col: i }, { row: 2, col: i }],
-      };
-    }
-  }
-
-  // Check diagonals
-  if (board[0][0] && board[0][0] === board[1][1] && board[1][1] === board[2][2]) {
-    return {
-      type: 'diagonal',
-      index: 0,
-      cells: [{ row: 0, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 2 }],
-    };
-  }
-
-  if (board[0][2] && board[0][2] === board[1][1] && board[1][1] === board[2][0]) {
-    return {
-      type: 'diagonal',
-      index: 1,
-      cells: [{ row: 0, col: 2 }, { row: 1, col: 1 }, { row: 2, col: 0 }],
-    };
-  }
-
-  return null;
+// Game logic utilities - use dynamic versions from gameLogic.ts
+// checkWin and isFull are already imported above from gameLogic
+// These local aliases maintain compatibility with the rest of the file
+const checkWinCondition = (board: Cell[][], winLength: number = 3): WinningLine | null => {
+  return checkWin(board, winLength);
 };
 
 const isBoardFull = (board: Cell[][]): boolean => {
-  return board.every(row => row.every(cell => cell !== null));
+  return isFull(board);
 };
 
 // Reducer
@@ -241,9 +351,91 @@ const gameReducer = (
 ): { game: ExtendedGameState; config: GameConfig; stats: GameStats; isAIThinking: boolean; trollMessage: string | null } => {
   switch (action.type) {
     case 'MAKE_MOVE': {
-      const { row, col } = action.payload;
+      const { row, col, gravityFinalRow: presetGravityRow, expectedPlayer, forcedPlayer } = action.payload;
       const game = state.game;
       const { mode } = state.config;
+
+      // Never accept a move into a finished game (e.g. a tap that was in flight
+      // when a Blitz timeout ended the game would otherwise recompute the winner).
+      if (game.winner || (game as any).isDraw) {
+        return state;
+      }
+
+      // Gravity: reject input while a fall animation is in progress. Without this,
+      // a second tap (or the AI) mid-fall overwrites pendingFall — the falling
+      // sprite unmounts mid-air and completions land on the wrong piece.
+      if (mode === 'gravity' && (game as GravityGameState).pendingFall?.isAnimating) {
+        return state;
+      }
+
+      // Hard guard: if the dispatcher specified which player should be moving
+      // (e.g. AI passes expectedPlayer='O'), refuse to act when the live state
+      // disagrees. Without this, a stale callback or remount race could let the
+      // AI place the human's piece.
+      if (expectedPlayer && game.currentPlayer !== expectedPlayer) {
+        return state;
+      }
+
+      // The piece player to place: if forcedPlayer was supplied (AI ALWAYS
+      // forces 'O'), use that instead of game.currentPlayer. This is the
+      // bulletproof guard: even if every other check somehow misfired, the
+      // AI will never place anything but its own 'O' piece.
+      const placingPlayer: Player = forcedPlayer || game.currentPlayer;
+
+      // BOMB MODE: stepping on the hidden mine destroys the piece and costs the
+      // turn. The board is unchanged, the bomb moves elsewhere, and the move is
+      // NOT recorded in `moves` (no piece was ever placed).
+      if (mode === 'bomb') {
+        const bombGame = game as BombGameState;
+        if (game.board[row][col] !== null) {
+          return state; // occupied
+        }
+        if (row === bombGame.bombRow && col === bombGame.bombCol) {
+          const relocated = pickRandomBombCell(game.board, { row, col });
+          return {
+            ...state,
+            game: {
+              ...bombGame,
+              // turn passes to the opponent — the mine cost you your move
+              currentPlayer: placingPlayer === 'X' ? 'O' : 'X',
+              bombRow: relocated.row,
+              bombCol: relocated.col,
+              lastExplosion: { row, col, player: placingPlayer },
+              explosionCount: (bombGame.explosionCount || 0) + 1,
+            } as BombGameState,
+          };
+        }
+      }
+
+      // MAD MODE: a frozen cell is temporarily unplayable
+      if (mode === 'mad') {
+        const madGame = game as MadGameState;
+        if (
+          madGame.frozenTurnsLeft > 0 &&
+          madGame.frozenCell &&
+          madGame.frozenCell.row === row &&
+          madGame.frozenCell.col === col
+        ) {
+          return state;
+        }
+      }
+
+      // GOBBLE MODE: a piece may go on an empty cell or swallow a SMALLER one,
+      // and only if the player still has that size in hand.
+      let gobbleSize: GobbleSize | null = null;
+      if (mode === 'gobble') {
+        const gob = game as GobbleGameState;
+        const size = gob.selectedSize;
+        if ((gob.piecesLeft[placingPlayer]?.[size] || 0) <= 0) {
+          return state; // none of that size left
+        }
+        const occupantSize = gob.cellSizes[row][col];
+        if (occupantSize !== null && occupantSize >= size) {
+          return state; // can only cover something strictly smaller
+        }
+        // Covering your own piece is allowed (it hides it), same as Gobblet
+        gobbleSize = size;
+      }
 
       let actualRow = row;
       let actualCol = col;
@@ -262,9 +454,10 @@ const gameReducer = (
 
         // Check if piece will fall (40% chance and there's space below)
         let lowestEmptyRow = row;
+        const boardSize = game.board.length;
 
         // Find the lowest empty position below the clicked cell
-        for (let r = row + 1; r < 3; r++) {
+        for (let r = row + 1; r < boardSize; r++) {
           if (game.board[r][col] === null) {
             lowestEmptyRow = r;
           } else {
@@ -272,14 +465,20 @@ const gameReducer = (
           }
         }
 
-        // Determine if gravity effect triggers (40% chance if there's space below)
-        gravityWillFall = lowestEmptyRow > row && Math.random() < 0.4;
-        gravityLowestRow = lowestEmptyRow;
+        // Use pre-determined gravity result if provided (online sync), otherwise randomize
+        if (presetGravityRow !== undefined) {
+          gravityWillFall = presetGravityRow >= 0 && presetGravityRow !== row;
+          gravityLowestRow = presetGravityRow >= 0 ? presetGravityRow : row;
+        } else {
+          // Determine if gravity effect triggers (40% chance if there's space below)
+          gravityWillFall = lowestEmptyRow > row && Math.random() < 0.4;
+          gravityLowestRow = lowestEmptyRow;
+        }
 
         // IMPORTANT: Always place the piece at the CLICKED position first
         // The animation will visually show the fall, then COMPLETE_GRAVITY_FALL
         // will move it to the final position
-        newBoard[row][col] = game.currentPlayer;
+        newBoard[row][col] = placingPlayer;
         actualRow = row; // Initially at clicked position
         actualCol = col;
 
@@ -287,23 +486,51 @@ const gameReducer = (
           console.log(`🪐 Gravity! Piece appears at (${row}, ${col}), will animate fall to (${lowestEmptyRow}, ${col})`);
         }
       } else {
-        // Standard modes - check if cell is occupied
-        if (game.board[row][col] !== null) {
+        // Standard modes - check if cell is occupied.
+        // Gobble is the exception: covering a smaller piece is the whole point,
+        // and its own legality check ran above.
+        if (mode !== 'gobble' && game.board[row][col] !== null) {
           return state;
         }
         newBoard = game.board.map(r => [...r]);
-        newBoard[row][col] = game.currentPlayer;
+        newBoard[row][col] = placingPlayer;
+      }
+
+      // MIRROR MODE: the placement is echoed on the point-symmetric cell when
+      // that cell is free. The center cell maps onto itself, so it never echoes.
+      let mirrorPlacement: { row: number; col: number } | undefined;
+      if (mode === 'mirror') {
+        const size = newBoard.length;
+        const mRow = size - 1 - row;
+        const mCol = size - 1 - col;
+        if (!(mRow === row && mCol === col) && newBoard[mRow][mCol] === null) {
+          newBoard[mRow][mCol] = placingPlayer;
+          mirrorPlacement = { row: mRow, col: mCol };
+        }
       }
 
       const newMove: GameMove = {
         row: actualRow,
         col: actualCol,
-        player: game.currentPlayer,
+        player: placingPlayer,
         moveNumber: game.moveCount + 1,
       };
 
-      const newMoves = [...game.moves, newMove];
-      const newMoveCount = game.moveCount + 1;
+      // The mirrored piece is recorded as its own move so replay, draw
+      // detection and moveCount all stay consistent with the board.
+      const mirrorMove: GameMove | null = mirrorPlacement
+        ? {
+            row: mirrorPlacement.row,
+            col: mirrorPlacement.col,
+            player: placingPlayer,
+            moveNumber: game.moveCount + 2,
+          }
+        : null;
+
+      const newMoves = mirrorMove
+        ? [...game.moves, newMove, mirrorMove]
+        : [...game.moves, newMove];
+      const newMoveCount = game.moveCount + (mirrorMove ? 2 : 1);
 
       // Determine board size and win condition based on mode
       let winLength = 3;
@@ -322,8 +549,14 @@ const gameReducer = (
         const maxPieces = 6;
         const oldestMoveIndex = currentInfinityState.oldestMoveIndex || 0;
 
-        // If we have more than 6 pieces, remove the oldest FIRST
-        if (newMoveCount > maxPieces) {
+        // RULE: check for a win BEFORE removing the oldest piece. The removed
+        // piece is always the mover's own — removing first meant a 3-in-a-row
+        // completed through your oldest piece silently evaporated in the same
+        // dispatch ("the game ignored my win"). If the placement wins, the game
+        // is over and no removal happens.
+        finalWinner = checkWin(newBoard, winLength);
+
+        if (!finalWinner && newMoveCount > maxPieces) {
           const moveToRemove = newMoves[oldestMoveIndex];
 
           if (moveToRemove) {
@@ -333,13 +566,9 @@ const gameReducer = (
             const boardAfterRemoval = newBoard.map(row => [...row]);
             boardAfterRemoval[moveToRemove.row][moveToRemove.col] = null;
             finalBoard = boardAfterRemoval;
-
-            console.log(`🎮 Infinity Mode: Board after removal:`, boardAfterRemoval.map(row => row.map(cell => cell || '.')).join('\n'));
           }
         }
 
-        // NOW check for winner in the FINAL board state (after removal)
-        finalWinner = checkWin(finalBoard, winLength);
         // Infinity mode never has draws
         finalIsDraw = false;
       } else if (state.config.mode === 'reverse') {
@@ -360,23 +589,133 @@ const gameReducer = (
         if (state.config.mode === 'reverse') {
           // In Reverse mode, the player who made 3 in line LOSES
           // So the opponent wins
-          actualWinner = game.currentPlayer === 'X' ? 'O' : 'X';
-          console.log(`🔄 Reverse Mode: ${game.currentPlayer} made 3 in line and LOSES! ${actualWinner} wins!`);
+          actualWinner = placingPlayer === 'X' ? 'O' : 'X';
+          console.log(`🔄 Reverse Mode: ${placingPlayer} made 3 in line and LOSES! ${actualWinner} wins!`);
         } else {
-          // Normal modes: current player wins
-          actualWinner = game.currentPlayer;
+          // Normal modes: the player who just placed wins
+          actualWinner = placingPlayer;
         }
       }
 
       let updatedGame: ExtendedGameState = {
         ...game,
         board: finalBoard,
-        currentPlayer: game.currentPlayer === 'X' ? 'O' : 'X',
+        currentPlayer: placingPlayer === 'X' ? 'O' : 'X',
         moves: newMoves,
         moveCount: newMoveCount,
         winner: actualWinner,
         isDraw: finalIsDraw,
       };
+
+      // Bomb mode: a piece landed safely — clear the previous explosion marker
+      // and make sure the mine is never sitting under an occupied cell.
+      if (state.config.mode === 'bomb') {
+        const bombGame = updatedGame as BombGameState;
+        const prev = game as BombGameState;
+        bombGame.explosionCount = prev.explosionCount || 0;
+        bombGame.lastExplosion = undefined;
+        const bombStillValid =
+          prev.bombRow >= 0 &&
+          prev.bombCol >= 0 &&
+          finalBoard[prev.bombRow]?.[prev.bombCol] === null;
+        if (bombStillValid) {
+          bombGame.bombRow = prev.bombRow;
+          bombGame.bombCol = prev.bombCol;
+        } else {
+          const relocated = pickRandomBombCell(finalBoard, null);
+          bombGame.bombRow = relocated.row;
+          bombGame.bombCol = relocated.col;
+        }
+        updatedGame = bombGame;
+      }
+
+      // Mirror mode: remember the echoed cell so the UI can flash it
+      if (state.config.mode === 'mirror') {
+        const mirrorGame = updatedGame as MirrorGameState;
+        mirrorGame.lastMirrorCell = mirrorPlacement;
+        updatedGame = mirrorGame;
+      }
+
+      // GOBBLE: consume the piece, record its size, and decide the draw by
+      // "the next player has no legal move" instead of "the board is full"
+      // (a full board is still playable while smaller pieces can be swallowed).
+      if (state.config.mode === 'gobble' && gobbleSize) {
+        const prev = game as GobbleGameState;
+        const gob = updatedGame as GobbleGameState;
+
+        gob.cellSizes = prev.cellSizes.map(r => [...r]);
+        gob.cellSizes[actualRow][actualCol] = gobbleSize;
+
+        gob.piecesLeft = {
+          X: { ...prev.piecesLeft.X },
+          O: { ...prev.piecesLeft.O },
+        };
+        gob.piecesLeft[placingPlayer][gobbleSize] -= 1;
+        gob.lastGobble = prev.board[actualRow][actualCol] ? { row: actualRow, col: actualCol } : undefined;
+
+        const nextPlayer: Player = placingPlayer === 'X' ? 'O' : 'X';
+        // Auto-select the next player's smallest available size
+        const available = ([1, 2, 3] as GobbleSize[]).filter(s => gob.piecesLeft[nextPlayer][s] > 0);
+        gob.selectedSize = available[0] ?? 1;
+
+        if (!actualWinner) {
+          const canMove = available.some(size =>
+            gob.cellSizes.some((rowSizes, r) =>
+              rowSizes.some((occupant, c) => occupant === null || occupant < size)
+            )
+          );
+          gob.isDraw = !canMove;
+          finalIsDraw = !canMove;
+        } else {
+          gob.isDraw = false;
+        }
+
+        updatedGame = gob;
+      }
+
+      // MAD MODE: count down to the next mutation and apply it
+      if (state.config.mode === 'mad') {
+        const prev = game as MadGameState;
+        const mad = updatedGame as MadGameState;
+
+        // Tick down the freeze from the previous mutation
+        mad.frozenTurnsLeft = Math.max(0, (prev.frozenTurnsLeft || 0) - 1);
+        mad.frozenCell = mad.frozenTurnsLeft > 0 ? prev.frozenCell : undefined;
+        mad.mutationCount = prev.mutationCount || 0;
+        mad.lastMutation = prev.lastMutation;
+
+        const remaining = (prev.movesUntilMutation || MAD_MOVES_PER_MUTATION) - 1;
+
+        // Never mutate a finished game — it could erase the winning line
+        if (remaining <= 0 && !actualWinner && !finalIsDraw) {
+          const mutation = applyMadMutation(mad.board);
+          mad.board = mutation.board;
+          mad.mutationCount += 1;
+          mad.lastMutation = { type: mutation.type, id: mad.mutationCount };
+          mad.movesUntilMutation = MAD_MOVES_PER_MUTATION;
+
+          if (mutation.frozenCell) {
+            mad.frozenCell = mutation.frozenCell;
+            mad.frozenTurnsLeft = MAD_FREEZE_TURNS;
+          }
+
+          // A swap can create a line for EITHER player, so re-check and credit
+          // the line's real owner rather than whoever just moved.
+          const mutatedLine = checkWin(mad.board, winLength);
+          if (mutatedLine) {
+            const owner = mad.board[mutatedLine.cells[0].row][mutatedLine.cells[0].col];
+            if (owner) {
+              mad.winner = owner;
+            }
+          } else if (isFull(mad.board)) {
+            mad.isDraw = true;
+          }
+        } else {
+          mad.movesUntilMutation = Math.max(1, remaining);
+        }
+
+        updatedGame = mad;
+      }
 
       // Handle Blitz mode - reset timer for next player
       if (state.config.mode === 'blitz' && !actualWinner && !finalIsDraw) {
@@ -394,19 +733,19 @@ const gameReducer = (
         infinityGame.maxPieces = 6;
         infinityGame.oldestMoveIndex = currentInfinityState.oldestMoveIndex || 0;
 
-        // Update oldestMoveIndex if we removed a piece
-        if (newMoveCount > infinityGame.maxPieces) {
+        // Advance oldestMoveIndex ONLY if a removal actually happened this
+        // dispatch (no removal happens on a winning placement — see above).
+        if (!finalWinner && newMoveCount > infinityGame.maxPieces) {
           infinityGame.oldestMoveIndex += 1;
+        }
 
-          // Set next piece to be removed (if there will be one)
-          if (infinityGame.oldestMoveIndex < newMoves.length) {
-            infinityGame.nextToRemove = newMoves[infinityGame.oldestMoveIndex];
-          } else {
-            infinityGame.nextToRemove = undefined;
-          }
+        // nextToRemove = the piece that will disappear on the NEXT placement.
+        // Warn as soon as the board is full (6 pieces) — previously this was
+        // only set from move 7 on, one move too late for the UI to warn.
+        if (!finalWinner && newMoveCount >= infinityGame.maxPieces && infinityGame.oldestMoveIndex < newMoves.length) {
+          infinityGame.nextToRemove = newMoves[infinityGame.oldestMoveIndex];
         } else {
           infinityGame.nextToRemove = undefined;
-          console.log(`🎮 Infinity Mode: ${newMoveCount}/6 pieces on board`);
         }
 
         updatedGame = infinityGame;
@@ -569,12 +908,23 @@ const gameReducer = (
     }
 
 
-    case 'LOAD_STORED_DATA':
+    case 'LOAD_STORED_DATA': {
+      // The stored config carries `mode`, so restoring it used to leave the
+      // config saying (say) "gobble" while `game` was still the default classic
+      // state. GameScreen renders once BEFORE its mount effect dispatches
+      // SET_MODE, and that first render reads mode from the config — so it
+      // reached into a gobble-only field (`piecesLeft`) on a classic state and
+      // threw, closing the app. Rebuild the board for the restored mode so the
+      // two can never disagree.
+      const restoredConfig = action.payload.config;
+      const needsRebuild = restoredConfig.mode !== state.config.mode;
       return {
         ...state,
-        config: action.payload.config,
+        config: restoredConfig,
         stats: action.payload.stats,
+        game: needsRebuild ? createInitialGameState(restoredConfig.mode) : state.game,
       };
+    }
 
     case 'BLITZ_TIMEOUT': {
       // Player ran out of time - they lose, opponent wins
@@ -613,47 +963,17 @@ const gameReducer = (
       return state;
     }
 
-    case 'GRAVITY_EARTHQUAKE': {
-      // In gravity mode, randomly make pieces fall if there's empty space below
-      if (state.config.mode === 'gravity') {
-        const board = state.game.board.map(row => [...row]);
-        let hadFall = false;
-
-        // Check each column for pieces that can fall
-        for (let col = 0; col < 3; col++) {
-          for (let row = 0; row < 2; row++) { // Don't check bottom row
-            const piece = board[row][col];
-            const belowPiece = board[row + 1][col];
-
-            // If there's a piece and empty space below, make it fall
-            if (piece !== null && belowPiece === null) {
-              // Random chance to fall (30%)
-              if (Math.random() < 0.3) {
-                board[row + 1][col] = piece;
-                board[row][col] = null;
-                hadFall = true;
-                console.log(`🌍 Earthquake! Piece at (${row}, ${col}) fell to (${row + 1}, ${col})`);
-              }
-            }
-          }
-        }
-
-        if (hadFall) {
-          // Check if the earthquake caused a win
-          const winLength = 3;
-          const winner = checkWin(board, winLength);
-
-          return {
-            ...state,
-            game: {
-              ...state.game,
-              board,
-              winner: winner ? state.game.currentPlayer : null,
-            },
-          };
-        }
+    case 'SELECT_GOBBLE_SIZE': {
+      if (state.config.mode !== 'gobble') return state;
+      const gob = state.game as GobbleGameState;
+      // Can't select a size you have none of
+      if ((gob.piecesLeft[gob.currentPlayer]?.[action.payload] || 0) <= 0) {
+        return state;
       }
-      return state;
+      return {
+        ...state,
+        game: { ...gob, selectedSize: action.payload } as GobbleGameState,
+      };
     }
 
     case 'COMPLETE_GRAVITY_FALL': {
@@ -674,7 +994,7 @@ const gameReducer = (
 
           console.log(`🪐 Gravity fall complete: piece moved from (${startRow}, ${col}) to (${endRow}, ${col})`);
 
-          // Check for winner after the fall completes
+          // Check for winner after the fall completes. Gravity is 3x3 only.
           const winner = checkWin(newBoard, 3);
           const isDraw = !winner && isFull(newBoard);
 
@@ -710,6 +1030,74 @@ const gameReducer = (
       return state;
     }
 
+    case 'BLITZ_ADD_TIME': {
+      if (state.config.mode === 'blitz') {
+        const blitzGame = state.game as BlitzGameState;
+        return {
+          ...state,
+          game: {
+            ...blitzGame,
+            timeRemaining: blitzGame.timeRemaining + action.payload,
+            currentTurnStartTime: Date.now(), // Reset start so timer recalculates
+          },
+        };
+      }
+      return state;
+    }
+
+    case 'UNDO_LAST_MOVES': {
+      const game = state.game;
+      if (game.moves.length === 0 || game.winner || (game as any).isDraw) return state;
+
+      // In AI mode: undo 2 moves (human + AI), or 1 if AI hasn't moved yet
+      const isAI = state.config.opponent === 'ai';
+      const movesToUndo = isAI && game.currentPlayer === 'X' && game.moves.length >= 2 ? 2 : 1;
+
+      const newMoves = game.moves.slice(0, -movesToUndo);
+      const newMoveCount = game.moveCount - movesToUndo;
+
+      // Infinity mode: only the last `maxPieces` moves are actually on the
+      // board. Rebuilding from ALL moves would resurrect removed pieces and
+      // leave oldestMoveIndex pointing past reality (7-piece ghost boards).
+      const isInfinity = state.config.mode === 'infinity';
+      const maxPieces = 6;
+      const newOldestIndex = isInfinity ? Math.max(0, newMoves.length - maxPieces) : 0;
+      const liveMoves = isInfinity ? newMoves.slice(newOldestIndex) : newMoves;
+
+      // Rebuild board from scratch (live pieces only)
+      const size = game.board.length;
+      const freshBoard: Cell[][] = Array(size).fill(null).map(() => Array(size).fill(null));
+      for (const move of liveMoves) {
+        freshBoard[move.row][move.col] = move.player;
+      }
+
+      // Determine whose turn it is (from the full history, not the live window)
+      const xMoves = newMoves.filter(m => m.player === 'X').length;
+      const oMoves = newMoves.filter(m => m.player === 'O').length;
+      const currentPlayer: Player = xMoves <= oMoves ? 'X' : 'O';
+
+      const undoneGame: ExtendedGameState = {
+        ...game,
+        board: freshBoard,
+        moves: newMoves,
+        moveCount: newMoveCount,
+        currentPlayer,
+        winner: null,
+        isDraw: false,
+      };
+
+      if (isInfinity) {
+        const inf = undoneGame as unknown as InfinityGameState;
+        inf.oldestMoveIndex = newOldestIndex;
+        inf.nextToRemove = newMoves.length >= maxPieces ? newMoves[newOldestIndex] : undefined;
+      }
+
+      return {
+        ...state,
+        game: undoneGame,
+      };
+    }
+
     default:
       return state;
   }
@@ -725,16 +1113,25 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     trollMessage: null,
   });
 
+  // Payout of the round that just ended, read by the end-of-game modal.
+  // Cleared when a new round starts so a modal can never show stale numbers.
+  const [lastRewards, setLastRewards] = React.useState<GameRewards | null>(null);
+
   const [aiPlayer] = React.useState(() => new AIPlayer());
 
   // Load stored data and initialize sound system on app start
+  // True once the stored config/stats have been read back. Until then the save
+  // effects below must not write: they run on mount with the DEFAULT state, and
+  // AsyncStorage serialises operations, so those writes would land before the
+  // read and the load would return the defaults it just wrote — silently
+  // erasing the player's theme, language and lifetime stats on every cold start.
+  const hasLoadedStoredData = React.useRef(false);
+
   React.useEffect(() => {
     const initializeApp = async () => {
       try {
-        // Initialize sound system
-        await SoundUtils.preloadSounds();
-
-        // Load stored data
+        // Read persisted state FIRST, before any slow initialisation, so the
+        // save effects stay blocked for as short a time as possible.
         const [storedConfig, storedStats] = await Promise.all([
           AsyncStorage.getItem('@game_config'),
           AsyncStorage.getItem('@game_stats'),
@@ -744,13 +1141,29 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           dispatch({
             type: 'LOAD_STORED_DATA',
             payload: {
-              config: storedConfig ? JSON.parse(storedConfig) : initialGameConfig,
-              stats: storedStats ? JSON.parse(storedStats) : initialGameStats,
+              // Merge over defaults so state saved by older versions still gets
+              // any fields added since (e.g. a new config flag reads undefined).
+              config: storedConfig
+                ? { ...initialGameConfig, ...JSON.parse(storedConfig) }
+                : initialGameConfig,
+              stats: storedStats
+                ? { ...initialGameStats, ...JSON.parse(storedStats) }
+                : initialGameStats,
             },
           });
         }
       } catch (error) {
-        console.error('Error initializing app:', error);
+        console.error('Error loading stored data:', error);
+      } finally {
+        // Unblock persistence even if the read failed, otherwise the session's
+        // progress would never be saved at all.
+        hasLoadedStoredData.current = true;
+      }
+
+      try {
+        await SoundUtils.preloadSounds();
+      } catch (error) {
+        console.error('Error preloading sounds:', error);
       }
     };
 
@@ -762,12 +1175,14 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
   }, []);
 
-  // Save config and stats when they change
+  // Save config and stats when they change (never before the load completes)
   React.useEffect(() => {
+    if (!hasLoadedStoredData.current) return;
     AsyncStorage.setItem('@game_config', JSON.stringify(state.config));
   }, [state.config]);
 
   React.useEffect(() => {
+    if (!hasLoadedStoredData.current) return;
     AsyncStorage.setItem('@game_stats', JSON.stringify(state.stats));
   }, [state.stats]);
 
@@ -790,12 +1205,20 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [state.config.difficulty, aiPlayer]);
 
-  const makeMove = useCallback((row: number, col: number) => {
-    dispatch({ type: 'MAKE_MOVE', payload: { row, col } });
+  const makeMove = useCallback((row: number, col: number, gravityFinalRow?: number) => {
+    dispatch({ type: 'MAKE_MOVE', payload: { row, col, gravityFinalRow } });
   }, []);
 
   const makeAIMove = useCallback(async () => {
     if (state.config.opponent !== 'ai' || state.game.winner || (state.game as any).isDraw || state.isAIThinking) {
+      return;
+    }
+
+    // CRITICAL guard: only let the AI move when it is genuinely O's turn.
+    // Without this, a stale callback fired from a remount (e.g. tournament
+    // round transition via navigation.replace) could dispatch MAKE_MOVE while
+    // currentPlayer is still 'X', causing the AI to "place the player's piece".
+    if (state.game.currentPlayer !== 'O') {
       return;
     }
 
@@ -805,16 +1228,47 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Simulate thinking time
       await aiPlayer.simulateThinking();
 
+      // Re-check after the await — state may have advanced while we were thinking.
+      // (Defensive: never let AI complete a move on the wrong player's turn.)
+      if (state.game.currentPlayer !== 'O') {
+        dispatch({ type: 'SET_AI_THINKING', payload: false });
+        return;
+      }
+
+      // Determine win length for BigBoard mode
+      let aiWinLength = 3;
+      if (state.config.mode === 'bigBoard') {
+        const bigBoardGame = state.game as BigBoardGameState;
+        aiWinLength = bigBoardGame.winCondition || 4;
+      }
+
+      // In infinity mode, pass only the LIVE window of moves (pieces still on
+      // the board). The full `moves` array grows forever, so `moves[0]` would
+      // be a piece removed long ago — the AI would simulate bogus removals.
+      const isInfinityMode = state.config.mode === 'infinity';
+      const aiMoves = isInfinityMode
+        ? state.game.moves.slice((state.game as InfinityGameState).oldestMoveIndex || 0)
+        : state.game.moves;
+
       const aiMove = aiPlayer.getBestMove(
         state.game.board,
-        state.config.mode === 'infinity',
-        state.game.moves,
-        state.config.mode === 'infinity' ? 6 : undefined,
-        state.config.mode === 'reverse' // isReverseMode - AI should try to lose
+        isInfinityMode,
+        aiMoves,
+        isInfinityMode ? 6 : undefined,
+        state.config.mode === 'reverse', // isReverseMode - AI should try to lose
+        aiWinLength,
+        state.config.mode === 'blind', // isBlindMode - AI has limited vision too
+        state.config.mode === 'gravity' // isGravityMode - AI considers gravity effects
       );
 
       if (aiMove) {
-        dispatch({ type: 'MAKE_MOVE', payload: { row: aiMove.row, col: aiMove.col } });
+        // Triple-locked: expectedPlayer makes the reducer no-op if currentPlayer
+        // is somehow not 'O', and forcedPlayer hardcodes the placed piece to 'O'
+        // regardless of game.currentPlayer. The AI will never place an 'X'.
+        dispatch({
+          type: 'MAKE_MOVE',
+          payload: { row: aiMove.row, col: aiMove.col, expectedPlayer: 'O', forcedPlayer: 'O' },
+        });
       }
     } catch (error) {
       console.error('AI move error:', error);
@@ -823,11 +1277,17 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [state.config.opponent, state.game.winner, (state.game as any).isDraw, state.isAIThinking, state.game.board, state.game.moves, aiPlayer]);
 
+  const clearLastRewards = useCallback(() => setLastRewards(null), []);
+
   const restartGame = useCallback(() => {
+    // Drop the previous round's payout so a fresh game can never open its end
+    // modal showing numbers that were earned earlier.
+    setLastRewards(null);
     dispatch({ type: 'RESTART_GAME' });
   }, []);
 
   const newRound = useCallback(() => {
+    setLastRewards(null);
     dispatch({ type: 'NEW_ROUND' });
   }, []);
 
@@ -847,17 +1307,11 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     dispatch({ type: 'SET_CONFIG', payload: config });
   }, []);
 
-  // Import storeService at the top of the file if not already imported
-  // But wait, I need to do it inside the replacement or ensure imports are there.
-  // Since replace_file_content works on chunks, I will handle the import in a separate call or assume I can't easily add imports without rewriting the top.
-  // Actually, I can use multi_replace for this.
-
-  // Let's stick to modifying updateGameStats for now, and I will add the import in a separate tool call if needed or include it if I rewrite the top.
-  // Wait, I can't use 'storeService' if I don't import it.
-  // I will use multi_replace to add the import AND update the function.
-
   const updateGameStats = useCallback(async (winner: Player | null, isDraw: boolean) => {
     const newStats = { ...state.stats };
+    // Stars paid for this round. The services already returned every payout
+    // number below; nobody read them, so a win looked like it paid nothing.
+    let earnedStars = 0;
 
     // Handle Survival Mode
     if (state.config.mode === 'survival') {
@@ -881,15 +1335,11 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }
         });
 
-        if (newLives <= 0) {
-          // Game Over - restart survival mode ONLY in survival mode
-          setTimeout(() => {
-            // Double check we're still in survival mode before restarting
-            if (state.config.mode === 'survival') {
-              dispatch({ type: 'RESTART_GAME' });
-            }
-          }, 5000); // Changed to 5 seconds to not conflict with modal
-        }
+        // Game over (lives 0) is handled by the end-game modal's "Play Again",
+        // which dispatches RESTART_GAME and resets lives. Do NOT auto-restart on a
+        // timer here: the old 5s setTimeout survived navigation and mode changes
+        // (stale closure always passed the mode check) and wiped the board of
+        // whatever game was live 5 seconds later — pieces "disappeared" mid-game.
       }
     }
 
@@ -908,10 +1358,16 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       newStats[`player${winner}`].wins += 1;
       newStats[`player${loser}`].losses += 1;
 
-      // Update streak
-      newStats.currentStreak += 1;
-      if (newStats.currentStreak > newStats.bestStreak) {
-        newStats.bestStreak = newStats.currentStreak;
+      // The streak belongs to the human (always X), and it used to be bumped on
+      // ANY winner — so losing to the AI *raised* your streak, and with it the
+      // streak bonus paid in stars, XP and ranked points. A loss ends it.
+      if (winner === 'X') {
+        newStats.currentStreak += 1;
+        if (newStats.currentStreak > newStats.bestStreak) {
+          newStats.bestStreak = newStats.currentStreak;
+        }
+      } else {
+        newStats.currentStreak = 0;
       }
 
       // REWARD INTEGRATION
@@ -932,10 +1388,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           // Win streak bonus is handled inside rewardWin but we pass currentStreak
           // Note: storeService.rewardWin expects (isSpecialMode: boolean, consecutiveWins)
           const isSpecialMode = state.config.mode !== 'classic';
-          await storeService.rewardWin(isSpecialMode, newStats.currentStreak);
-
-          // We could show a toast here, but the GameEndModal might be better place for UI
-          console.log('Reward processed for win against AI');
+          earnedStars = await storeService.rewardWin(isSpecialMode, newStats.currentStreak);
         } catch (err) {
           console.error('Error processing reward:', err);
         }
@@ -943,6 +1396,42 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     dispatch({ type: 'UPDATE_STATS', payload: newStats });
+
+    // Award Battle Pass XP + update Ranked
+    try {
+      const isSpecialMode = state.config.mode !== 'classic';
+      const playerWon = winner === 'X';
+      const bpResult = await battlepassService.onGameEnd(playerWon, isDraw, isSpecialMode, newStats.currentStreak);
+      const rankedResult = await rankedService.recordGame(playerWon, isDraw, state.config.difficulty);
+      await challengeService.onGameEnd(playerWon, isDraw, state.config.mode, state.config.difficulty, newStats.currentStreak, state.config.opponent);
+      const unlocked = await achievementService.onGameEnd(
+        playerWon, isDraw, state.config.mode, state.config.difficulty,
+        newStats.totalGames,
+        // Only the human's wins count. Summing both players meant losing to the
+        // AI still advanced the "wins" achievements (playerO is the AI).
+        newStats.playerX.wins,
+        newStats.bestStreak,
+        // Was omitted entirely, so chest achievements could never be reached.
+        chestService.getTotalOpened()
+      );
+
+      setLastRewards({
+        stars: earnedStars,
+        xp: bpResult.xp,
+        rankedPoints: rankedResult.pointsChange,
+        leveledUp: bpResult.leveledUp,
+        newLevel: bpResult.newLevel,
+        achievements: unlocked || [],
+        chest: null,
+      });
+
+      // Log level up for UI notification (GameScreen picks this up)
+      if (bpResult.leveledUp) {
+        console.log(`🎖️ Battle Pass Level Up! Now level ${bpResult.newLevel}`);
+      }
+    } catch (err) {
+      console.error('Error updating battle pass / ranked:', err);
+    }
   }, [state.stats, state.config.mode, state.config.opponent, state.config.difficulty]);
 
   const resetStats = useCallback(async () => {
@@ -1014,12 +1503,20 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   // Gravity mode functions
-  const triggerEarthquake = useCallback(() => {
-    dispatch({ type: 'GRAVITY_EARTHQUAKE' });
-  }, []);
-
   const completeGravityFall = useCallback(() => {
     dispatch({ type: 'COMPLETE_GRAVITY_FALL' });
+  }, []);
+
+  const undoLastMoves = useCallback(() => {
+    dispatch({ type: 'UNDO_LAST_MOVES' });
+  }, []);
+
+  const selectGobbleSize = useCallback((size: GobbleSize) => {
+    dispatch({ type: 'SELECT_GOBBLE_SIZE', payload: size });
+  }, []);
+
+  const addBlitzTime = useCallback((seconds: number) => {
+    dispatch({ type: 'BLITZ_ADD_TIME', payload: seconds });
   }, []);
 
   const value: GameContextValue = {
@@ -1046,8 +1543,12 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     clearTrollMessage,
     handleBlitzTimeout,
     setBlitzTime,
-    triggerEarthquake,
     completeGravityFall,
+    undoLastMoves,
+    addBlitzTime,
+    selectGobbleSize,
+    lastRewards,
+    clearLastRewards,
   };
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

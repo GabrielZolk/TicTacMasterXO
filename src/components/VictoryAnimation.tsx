@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -12,6 +12,7 @@ import Animated, {
   runOnJS,
   Easing,
 } from 'react-native-reanimated';
+import type { SharedValue } from 'react-native-reanimated';
 
 import { Player } from '../types/game';
 import { COLORS, getPlayerColor } from '../utils/theme';
@@ -40,19 +41,81 @@ const VictoryAnimation: React.FC<VictoryAnimationProps> = ({
   duration = 3000,
 }) => {
   const equippedEffect = useEquippedEffect();
+  const animationType = equippedEffect?.animationType || 'sparkles';
 
-  // Determine animation type from equipped effect
-  const animationType = equippedEffect?.animationType || 'confetti';
-  console.log('🎆 [VictoryAnimation] Equipped effect:', equippedEffect);
-  console.log('🎆 [VictoryAnimation] Animation type:', animationType);
-
-  // If fireworks effect is equipped, show fireworks component
   if (animationType === 'fireworks') {
     return <FireworksAnimation onComplete={onComplete} />;
   }
-
-  // Default: confetti/sparkles animation with particles
+  if (animationType === 'stars') {
+    return <StarsAnimation onComplete={onComplete} duration={duration} colors={equippedEffect?.colors} />;
+  }
+  // sparkles + confetti share the same particle base
   return <ConfettiAnimation winner={winner} onComplete={onComplete} duration={duration} colors={equippedEffect?.colors} />;
+};
+
+// Stars animation — falling star emojis with golden glow
+const StarsAnimation: React.FC<{
+  onComplete?: () => void;
+  duration: number;
+  colors?: string[];
+}> = ({ onComplete, duration, colors }) => {
+  const palette = colors && colors.length ? colors : ['#FFD700', '#FFA500', '#FFECB3'];
+  const stars = Array.from({ length: 25 }, (_, i) => ({
+    id: i,
+    x: Math.random() * width,
+    delay: Math.random() * 1500,
+    size: 18 + Math.random() * 18,
+    color: palette[i % palette.length],
+    rotateDeg: Math.random() * 360,
+    char: i % 3 === 0 ? '⭐' : i % 3 === 1 ? '✨' : '🌟',
+  }));
+
+  useEffect(() => {
+    if (onComplete) {
+      const timeout = setTimeout(onComplete, duration);
+      return () => clearTimeout(timeout);
+    }
+  }, [duration, onComplete]);
+
+  return (
+    <View style={styles.container} pointerEvents="none">
+      {stars.map((s) => (
+        <FallingStar key={s.id} {...s} />
+      ))}
+    </View>
+  );
+};
+
+const FallingStar: React.FC<{
+  x: number;
+  delay: number;
+  size: number;
+  color: string;
+  rotateDeg: number;
+  char: string;
+}> = ({ x, delay, size, color, rotateDeg, char }) => {
+  const translateY = useSharedValue(-50);
+  const rotate = useSharedValue(0);
+  const opacity = useSharedValue(0);
+
+  useEffect(() => {
+    opacity.value = withDelay(delay, withTiming(1, { duration: 200 }));
+    translateY.value = withDelay(delay, withTiming(height + 50, { duration: 2500, easing: Easing.in(Easing.quad) }));
+    rotate.value = withDelay(delay, withRepeat(withTiming(360, { duration: 1200 }), -1, false));
+  }, []);
+
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }, { rotate: `${rotate.value + rotateDeg}deg` }],
+    opacity: opacity.value,
+  }));
+
+  return (
+    <Animated.View style={[styles.star, { left: x }, animStyle]}>
+      <Text style={{ fontSize: size, color, textShadowColor: color, textShadowRadius: 8 }}>
+        {char}
+      </Text>
+    </Animated.View>
+  );
 };
 
 // Separate component for confetti animation to avoid hook issues
@@ -140,7 +203,7 @@ const ConfettiAnimation: React.FC<{
 // Individual particle component
 const ParticleComponent: React.FC<{
   particle: Particle;
-  animationProgress: Animated.SharedValue<number>;
+  animationProgress: SharedValue<number>;
 }> = ({ particle, animationProgress }) => {
   const animatedStyle = useAnimatedStyle(() => {
     const progress = animationProgress.value;
@@ -174,7 +237,7 @@ const ParticleComponent: React.FC<{
 
 // Confetti overlay component
 const ConfettiOverlay: React.FC<{
-  animationProgress: Animated.SharedValue<number>;
+  animationProgress: SharedValue<number>;
   winner: Player;
   colors?: string[];
 }> = ({ animationProgress, winner, colors }) => {
@@ -331,6 +394,10 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     zIndex: 1000,
     elevation: 1000,
+  },
+  star: {
+    position: 'absolute',
+    top: 0,
   },
   centerSymbol: {
     position: 'absolute',

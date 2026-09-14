@@ -1,13 +1,15 @@
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
+
   StatusBar,
   TouchableOpacity,
   BackHandler,
   Alert,
+  Share,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
@@ -22,12 +24,13 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { RootStackParamList, GameMode, Difficulty, OpponentType, Player, BlitzGameState, GravityGameState } from '../types/game';
+import { RootStackParamList, GameMode, Difficulty, OpponentType, Player, BlitzGameState, GravityGameState, BigBoardGameState, BombGameState, MadGameState, GobbleGameState, GobbleSize } from '../types/game';
 import { useGame } from '../contexts/GameContext';
 import { useI18n } from '../i18n/useI18n';
 import BlitzTimer from '../components/BlitzTimer';
 import BlitzTimePicker from '../components/BlitzTimePicker';
 import AppHeader from '../components/AppHeader';
+import PlayerAvatar from '../components/art/PlayerAvatar';
 import GameBoard from '../components/GameBoard';
 import BigBoard from '../components/BigBoard';
 import BlindBoard from '../components/BlindBoard';
@@ -48,9 +51,30 @@ import { firebaseService } from '../services/firebaseService';
 import { PeerMessage, MovePayload, RoomInfo } from '../types/online';
 import { useTheme } from '../hooks/useTheme';
 import MysticBackground from '../components/MysticBackground';
+import CopaNickBackground from '../components/CopaNickBackground';
+import MatrixBackground from '../components/MatrixBackground';
+import MysticSeal from '../components/art/MysticSeal';
+import BombExplosion from '../components/BombExplosion';
+import GobbleSizePicker from '../components/GobbleSizePicker';
+import MadMutationBanner from '../components/MadMutationBanner';
 import OnlineGameEndModal from '../components/OnlineGameEndModal';
 import RemoveAdsButton from '../components/RemoveAdsButton';
 import adMobService from '../services/adMobService';
+import { boostService } from '../services/boostService';
+import { chestService } from '../services/chestService';
+import { battlepassService } from '../services/battlepassService';
+import { profileService } from '../services/profileService';
+import { AIPlayer } from '../utils/aiPlayer';
+import EmoteBar from '../components/EmoteBar';
+import ChestModal from '../components/ChestModal';
+import LevelUpAnimation from '../components/LevelUpAnimation';
+import ReplayModal from '../components/ReplayModal';
+import iapService from '../services/iapService';
+import { tournamentService } from '../services/tournamentService';
+import { Emote } from '../types/emotes';
+import { EmotePayload } from '../types/online';
+import { ChestRarity } from '../types/chest';
+import { buildShareCard } from '../utils/shareCard';
 
 type GameScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Game'>;
 type GameScreenRouteProp = RouteProp<RootStackParamList, 'Game'>;
@@ -84,19 +108,44 @@ const GameScreen: React.FC = () => {
     clearTrollMessage,
     handleBlitzTimeout,
     setBlitzTime,
-    triggerEarthquake,
     completeGravityFall,
+    undoLastMoves,
+    addBlitzTime,
+    selectGobbleSize,
+    lastRewards,
+    clearLastRewards,
   } = useGame();
 
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const [showMenu, setShowMenu] = useState(false);
   const [showVictoryAnimation, setShowVictoryAnimation] = useState(false);
   const [showGameEndModal, setShowGameEndModal] = useState(false);
+  // Guard to ensure tournamentService.recordResult fires exactly once per game instance
+  const tournamentRecordedRef = useRef(false);
+  // We must NOT record a result until we've actually seen this GameScreen
+  // observe a fresh game (moveCount === 0). Otherwise, on tournament round
+  // transitions (navigation.replace) the new GameScreen mounts while the
+  // GameContext still holds the previous game's terminal state (winner/draw),
+  // and the recording useEffect fires immediately with stale data — causing
+  // an extra round to be marked as won/drawn before the user even plays.
+  const sawGameStartRef = useRef(false);
   const [showOnlineEndModal, setShowOnlineEndModal] = useState(false); // New modal for online
   const menuScale = useSharedValue(0);
   const [gameStatsUpdated, setGameStatsUpdated] = useState(false);
   const gameEndProcessedRef = useRef(false);
+  const screenMountedRef = useRef(true);
+  // Tracks tournament final result (set when tournament ends this game)
+  const [tournamentFinished, setTournamentFinished] = useState<null | { won: boolean; totalWins: number; stars: number }>(null);
+  // Tracks next tournament round label (set after recordResult)
+  const [tournamentNextRoundLabel, setTournamentNextRoundLabel] = useState<string | null>(null);
+
+  // Track mount state to prevent async updates after unmount
+  useEffect(() => {
+    screenMountedRef.current = true;
+    return () => { screenMountedRef.current = false; };
+  }, []);
 
   // Blitz mode state
   const [showBlitzTimePicker, setShowBlitzTimePicker] = useState(mode === 'blitz');
@@ -113,6 +162,106 @@ const GameScreen: React.FC = () => {
   const [connectionStatus, setConnectionStatus] = useState<any>(
     firebaseService.getConnectionStatus()
   ); // Using any to avoid importing ConnectionStatus type if not already imported or conflict
+
+  // Emote state (online only)
+  const [receivedEmote, setReceivedEmote] = useState<Emote | null>(null);
+
+  // Chest state
+  const [pendingChestRarity, setPendingChestRarity] = useState<ChestRarity | null>(null);
+  const [showChestModal, setShowChestModal] = useState(false);
+
+  // Bomb mode: show the explosion overlay whenever explosionCount goes up
+  const [bombBlast, setBombBlast] = useState<{ key: number; message: string } | null>(null);
+  const lastExplosionCountRef = useRef(0);
+  useEffect(() => {
+    if (mode !== 'bomb') return;
+    const bombState = gameState as BombGameState;
+    const count = bombState.explosionCount || 0;
+    // A restart puts explosionCount back to 0 while this ref still held the
+    // previous round's total, so every later explosion failed the `>` test —
+    // from the second round on, stepping on the mine was completely silent.
+    if (count < lastExplosionCountRef.current) {
+      lastExplosionCountRef.current = count;
+    }
+    if (count > lastExplosionCountRef.current && bombState.lastExplosion) {
+      const victimIsMe = opponent === 'ai'
+        ? bombState.lastExplosion.player === 'X'
+        : true;
+      setBombBlast({
+        key: count,
+        message: victimIsMe ? t('bombHitYou') : t('bombHitOpponent'),
+      });
+      playSound('error');
+      triggerHaptics('heavy');
+    }
+    lastExplosionCountRef.current = count;
+  }, [mode, (gameState as BombGameState).explosionCount]);
+
+  // Mad mode: announce each board mutation so it doesn't look like a glitch
+  const [madBanner, setMadBanner] = useState<MadGameState['lastMutation'] | null>(null);
+  const lastMutationIdRef = useRef(0);
+  useEffect(() => {
+    if (mode !== 'mad') return;
+    const madState = gameState as MadGameState;
+    const mutation = madState.lastMutation;
+    // Same stale-counter trap as the bomb overlay: mutation ids restart at 1
+    // every new round, so without this the banner went quiet after round one.
+    const mutationCount = madState.mutationCount || 0;
+    if (mutationCount < lastMutationIdRef.current) {
+      lastMutationIdRef.current = mutationCount;
+    }
+    if (mutation && mutation.id > lastMutationIdRef.current) {
+      lastMutationIdRef.current = mutation.id;
+      setMadBanner(mutation);
+      playSound('button');
+      triggerHaptics('medium');
+    }
+  }, [mode, (gameState as MadGameState).lastMutation?.id]);
+
+  // Replay state
+  const [showReplay, setShowReplay] = useState(false);
+  const [replayMoves, setReplayMoves] = useState<typeof gameState.moves>([]);
+  const [replayWinner, setReplayWinner] = useState<typeof gameState.winner>(null);
+
+  // Battle Pass level up notification (animated overlay)
+  const bpLevelRef = useRef(0);
+  const [levelUpInfo, setLevelUpInfo] = useState<{ visible: boolean; level: number }>({ visible: false, level: 0 });
+  useEffect(() => {
+    battlepassService.getProgress().then(p => { bpLevelRef.current = p.currentLevel; });
+    const unsub = battlepassService.subscribe(() => {
+      battlepassService.getProgress().then(p => {
+        if (!screenMountedRef.current) return;
+        if (p.currentLevel > bpLevelRef.current && bpLevelRef.current > 0) {
+          setLevelUpInfo({ visible: true, level: p.currentLevel });
+          // Celebratory feedback
+          playSound('win');
+          triggerHaptics('heavy');
+        }
+        bpLevelRef.current = p.currentLevel;
+      });
+    });
+    return unsub;
+  }, []);
+
+  // Profile avatar for online display. We keep the *id* rather than an emoji
+  // so the drawn avatar renders here exactly as it does on the profile.
+  const [myAvatarId, setMyAvatarId] = useState('avatar_default');
+  useEffect(() => {
+    if (opponent === 'online') {
+      profileService.getProfile().then(p => {
+        if (p.avatarId) setMyAvatarId(p.avatarId);
+      }).catch(() => {});
+    }
+  }, [opponent]);
+
+  const handleSendEmote = (emote: Emote) => {
+    if (opponent !== 'online') return;
+    firebaseService.sendMessage({
+      type: 'emote',
+      payload: { emoteId: emote.id, emoji: emote.emoji } as EmotePayload,
+    });
+    triggerHaptics('light');
+  };
 
   // Set game mode, opponent and difficulty when screen loads
   useEffect(() => {
@@ -137,6 +286,9 @@ const GameScreen: React.FC = () => {
       !gameState.winner &&
       !(gameState as any).isDraw &&
       !isAIThinking &&
+      // Never move while a gravity fall is animating (reducer would reject it,
+      // but this also avoids wasted "thinking" cycles during the animation)
+      !(gameState as GravityGameState).pendingFall?.isAnimating &&
       // Additional check: ensure there are empty cells available
       gameState.board.some(row => row.some(cell => cell === null))
     ) {
@@ -147,7 +299,21 @@ const GameScreen: React.FC = () => {
 
       return () => clearTimeout(timer);
     }
-  }, [opponent, gameState.currentPlayer, gameState.winner, (gameState as any).isDraw, isAIThinking, makeAIMove, gameState.board]);
+  }, [opponent, gameState.currentPlayer, gameState.winner, (gameState as any).isDraw, isAIThinking, makeAIMove, gameState.board, (gameState as GravityGameState).pendingFall?.isAnimating]);
+
+  // Failsafe: if a gravity fall animation somehow never completes (e.g. app
+  // backgrounded mid-animation and the reanimated callback was dropped), force
+  // completion after 2.5s so the reducer's "reject moves while falling" guard
+  // can never soft-lock the game.
+  useEffect(() => {
+    const pf = (gameState as GravityGameState).pendingFall;
+    if (mode === 'gravity' && pf?.isAnimating) {
+      const failsafe = setTimeout(() => {
+        completeGravityFall();
+      }, 2500);
+      return () => clearTimeout(failsafe);
+    }
+  }, [mode, (gameState as GravityGameState).pendingFall?.isAnimating, completeGravityFall]);
 
   // Show modal when game ends
   useEffect(() => {
@@ -178,7 +344,8 @@ const GameScreen: React.FC = () => {
       triggerHaptics('heavy');
       setShowVictoryAnimation(true);
 
-      // Show modal after animation with guaranteed delay
+      // Show modal after animation — faster for Blitz mode
+      const modalDelay = mode === 'blitz' ? 1000 : 2000;
       const modalTimeout = setTimeout(() => {
         // Double-check game is still over before showing modal
         if (gameState.winner || (gameState as any).isDraw) {
@@ -188,7 +355,7 @@ const GameScreen: React.FC = () => {
             setShowGameEndModal(true);
           }
         }
-      }, 2000);
+      }, modalDelay);
 
       return () => clearTimeout(modalTimeout);
     }
@@ -208,10 +375,14 @@ const GameScreen: React.FC = () => {
       setGameStatsUpdated(false);
       setShowVictoryAnimation(false);
       gameEndProcessedRef.current = false;
+      tournamentRecordedRef.current = false; // Allow next game's tournament result to be recorded
+      sawGameStartRef.current = true;        // We've now observed a fresh game — recording is allowed
       isRestartingRef.current = false; // Reset restarting flag
       // Reset rematch states
       setOpponentWantsRematch(false);
       setIWantRematch(false);
+      // Reset tournament label (will be re-set on next game end)
+      setTournamentNextRoundLabel(null);
     }
 
   }, [gameState.winner, (gameState as any).isDraw, gameState.moveCount, showGameEndModal, showOnlineEndModal, mode, (gameState as BlitzGameState).timedOut]);
@@ -219,10 +390,60 @@ const GameScreen: React.FC = () => {
   // Update game statistics when game ends and trigger interstitial ad
   useEffect(() => {
     if ((gameState.winner || (gameState as any).isDraw) && !gameStatsUpdated) {
+      // Hard guard: refuse to record until this GameScreen instance has
+      // observed a fresh game start (moveCount===0). This prevents a stale
+      // terminal state inherited from the previous game (e.g. tournament
+      // navigation.replace remount) from being recorded as if it were the
+      // result of this round.
+      if (!sawGameStartRef.current) {
+        return;
+      }
 
       // Update stats only once when game ends
       updateGameStats(gameState.winner, (gameState as any).isDraw);
       setGameStatsUpdated(true);
+
+      const inTournament = tournamentService.isActive();
+
+      // Chest drop on win — SKIP during tournament games to avoid double-chest
+      // (tournament award gives its own epic chest on full win)
+      if (gameState.winner === 'X' && !inTournament) {
+        chestService.onWin().then(droppedRarity => {
+          if (!screenMountedRef.current) return;
+          if (droppedRarity) {
+            setPendingChestRarity(droppedRarity);
+          }
+        }).catch(() => {});
+      }
+
+      // Tournament: record result if active (guarded against double-fire)
+      if (inTournament && !tournamentRecordedRef.current) {
+        tournamentRecordedRef.current = true;
+        // Defensive: draw and win are mutually exclusive — isDraw wins if both
+        const playerDraw = !!(gameState as any).isDraw;
+        const playerWon = !playerDraw && gameState.winner === 'X';
+        tournamentService.recordResult(playerWon, playerDraw).then(result => {
+          if (!screenMountedRef.current) return;
+          // Tournament ended (win or loss): remember it so PlayAgain navigates to Home
+          // (tournament win chest is already pushed to chestService.pendingChests by the service,
+          // so it will show up as a banner on the Home screen automatically)
+          if (result.tournamentOver) {
+            setTournamentFinished({
+              won: result.won,
+              totalWins: result.totalWins,
+              stars: result.reward?.stars || 0,
+            });
+          } else if (result.won || result.isDraw) {
+            // Both win and draw advance the round — show "Next Round" label
+            const nextRound = tournamentService.getCurrentRound();
+            const roundIndex = tournamentService.getState().currentRound + 1;
+            if (nextRound) {
+              const prefix = result.isDraw ? t('tournamentDrawPrefix') : '';
+              setTournamentNextRoundLabel(`${prefix}${t('tournamentNextRound')} (${roundIndex}/3)`);
+            }
+          }
+        }).catch(() => {});
+      }
 
       // Trigger interstitial ad check (shows ad every 3 games if not subscribed)
       // Only for offline/AI games - not for online to avoid interrupting the experience
@@ -259,7 +480,7 @@ const GameScreen: React.FC = () => {
         // Host watches Guest
         // Detect if Guest Left (via disconnect or removal)
         if (!room.guest) {
-          Alert.alert('Oponente Saiu', 'O convidado desconectou da sala.', [
+          Alert.alert(t('opponentLeftTitle'), t('guestLeftBody'), [
             { text: 'OK', onPress: () => navigationRef.current.goBack() }
           ]);
           return;
@@ -310,7 +531,7 @@ const GameScreen: React.FC = () => {
         // Guest watches Host
         // Detect if Host Left (room deleted usually, but checking null host just in case)
         if (!room.host) {
-          Alert.alert('Host Saiu', 'O dono da sala desconectou.', [
+          Alert.alert(t('hostLeftTitle'), t('hostLeftBody'), [
             { text: 'OK', onPress: () => navigationRef.current.goBack() }
           ]);
           return;
@@ -327,7 +548,7 @@ const GameScreen: React.FC = () => {
 
       if (message.type === 'move') {
         const payload = message.payload as MovePayload;
-        makeMoveRef.current(payload.row, payload.col);
+        makeMoveRef.current(payload.row, payload.col, payload.gravityFinalRow);
         playSound('click');
         triggerHaptics('light');
       } else if (message.type === 'restart') {
@@ -357,9 +578,9 @@ const GameScreen: React.FC = () => {
         }, 500);
       } else if (message.type === 'leave') {
         console.log('🚪 Opponent left');
-        Alert.alert('Oponente Saiu', 'O oponente saiu da partida', [
+        Alert.alert(t('opponentLeftTitle'), t('opponentLeftBody'), [
           {
-            text: 'OK',
+            text: t('okAction'),
             onPress: () => navigationRef.current.goBack(),
           },
         ]);
@@ -367,11 +588,16 @@ const GameScreen: React.FC = () => {
         const { hostIs } = message.payload;
         if (hostIs === 'O') {
           setPlayerSymbol('X');
-          Alert.alert('Sorteio Inicial', 'Você começa jogando! (Você é X)');
+          Alert.alert(t('coinTossTitle'), t('coinTossYouStart'));
         } else {
           setPlayerSymbol('O');
-          Alert.alert('Sorteio Inicial', 'Oponente começa jogando! (Você é O)');
+          Alert.alert(t('coinTossTitle'), t('coinTossOpponentStarts'));
         }
+      } else if (message.type === 'emote') {
+        const payload = message.payload as EmotePayload;
+        setReceivedEmote({ id: payload.emoteId, emoji: payload.emoji, label: '' });
+        // Clear after animation
+        setTimeout(() => setReceivedEmote(null), 3000);
       }
     };
 
@@ -379,6 +605,11 @@ const GameScreen: React.FC = () => {
 
     return () => {
       console.log('🧹 Cleaning up game screen listener');
+      // Actually detach. Leaving these registered kept this unmounted screen's
+      // closure alive, so a later room update could pop an Alert and call
+      // goBack() from whatever screen the player had navigated to.
+      firebaseService.onMessage(null);
+      firebaseService.onRoomUpdate(null);
     };
   }, [opponent, isHost]);
 
@@ -395,6 +626,7 @@ const GameScreen: React.FC = () => {
     });
 
     return () => {
+      firebaseService.onConnectionStatus(null);
       if (opponent === 'online') {
         console.log('🔌 Leaving game session on unmount');
         // Use leaveRoom to notify opponent before disconnecting
@@ -420,6 +652,27 @@ const GameScreen: React.FC = () => {
   const handleGoBack = async () => {
     await triggerHaptics('light');
     await playSound('button');
+
+    // If mid-tournament (active and not at end), confirm and cancel tournament
+    if (tournamentService.isActive() && !tournamentFinished) {
+      Alert.alert(
+        t('leaveTournamentTitle'),
+        t('leaveTournamentBody'),
+        [
+          { text: t('keepPlaying'), style: 'cancel' },
+          {
+            text: t('leave'),
+            style: 'destructive',
+            onPress: () => {
+              tournamentService.cancel();
+              navigation.goBack();
+            },
+          },
+        ]
+      );
+      return;
+    }
+
     navigation.goBack();
   };
 
@@ -438,28 +691,66 @@ const GameScreen: React.FC = () => {
   };
 
   const handleCellPress = async (row: number, col: number) => {
-    if (gameState.winner || (gameState as any).isDraw || (gameMode !== 'gravity' && gameState.board[row][col] !== null)) {
+    // The occupied-cell check must apply to gravity too. It used to be skipped
+    // for gravity, so tapping a filled cell online still SENT the move to the
+    // opponent (whose board accepted it) while the local reducer rejected it —
+    // the two boards then disagreed for the rest of the match.
+    // Gobble is the one mode where an occupied cell is a legal target: a strictly
+    // larger piece covers a smaller one — that is the whole mode. The reducer
+    // already enforces `occupantSize >= size` (GameContext), but this guard
+    // returned first, so "peça maior engole a menor" could never be played at
+    // all. The size is re-checked here rather than just letting every occupied
+    // tap through, so an illegal move is still never sent to an online opponent.
+    const gobbleCanCover = (() => {
+      if (gameMode !== 'gobble') return false;
+      const gob = gameState as GobbleGameState;
+      const occupant = gob.cellSizes?.[row]?.[col] ?? null;
+      return occupant !== null && occupant < gob.selectedSize;
+    })();
+
+    if (gameState.winner || (gameState as any).isDraw || (gameState.board[row][col] !== null && !gobbleCanCover)) {
       await playSound('error');
       await triggerHaptics('heavy');
       return;
     }
 
+    // Gravity: ignore taps while a piece is still falling
+    if (gameMode === 'gravity' && (gameState as GravityGameState).pendingFall?.isAnimating) {
+      return;
+    }
+
+    // Pre-calculate gravity for online sync (sender determines randomness)
+    let gravityFinalRow: number | undefined;
+    if (gameMode === 'gravity' && opponent === 'online') {
+      const boardSize = gameState.board.length;
+      let lowestEmptyRow = row;
+      for (let r = row + 1; r < boardSize; r++) {
+        if (gameState.board[r][col] === null) {
+          lowestEmptyRow = r;
+        } else {
+          break;
+        }
+      }
+      const willFall = lowestEmptyRow > row && Math.random() < 0.4;
+      gravityFinalRow = willFall ? lowestEmptyRow : -1; // -1 means no fall
+    }
+
     // Online mode: Check if it's your turn
     if (opponent === 'online') {
-      const mySymbol = playerSymbol; // Use dynamic state instead of static calculation
+      const mySymbol = playerSymbol;
       if (gameState.currentPlayer !== mySymbol) {
         await playSound('error');
         await triggerHaptics('heavy');
         return; // Not your turn
       }
 
-      // Send move to opponent
-      firebaseService.sendMove(row, col, mySymbol, gameState.moveCount + 1);
+      // Send move to opponent (with gravity data if applicable)
+      firebaseService.sendMove(row, col, mySymbol, gameState.moveCount + 1, gravityFinalRow);
     }
 
     await playSound('click');
     await triggerHaptics('medium');
-    makeMove(row, col);
+    makeMove(row, col, gravityFinalRow);
   };
 
   const handleColumnPress = async (col: number) => {
@@ -481,30 +772,158 @@ const GameScreen: React.FC = () => {
     makeMove(0, col); // Row doesn't matter for gravity mode
   };
 
-  const handlePlayAgain = () => {
-    // Standard offline/AI play again
-    // Close modal first
-    setShowGameEndModal(false);
-
-    // Small delay to ensure modal closes before resetting game
-    setTimeout(() => {
-      setShowVictoryAnimation(false);
-      setGameStatsUpdated(false);
-      gameEndProcessedRef.current = false;
-      restartGame();
-    }, 200); // Wait for modal close animation
-
-    triggerHaptics('light');
-    playSound('button');
+  // Show chest if one is pending (called after game end modal closes)
+  const tryShowChest = () => {
+    if (pendingChestRarity) {
+      setTimeout(() => setShowChestModal(true), 300);
+    }
   };
 
+  const handlePlayAgain = () => {
+    try {
+      setShowGameEndModal(false);
+      triggerHaptics('light');
+      playSound('button');
+    } catch (e) {
+      console.warn('handlePlayAgain init error:', e);
+    }
+
+    // Tournament FINISHED (win or loss): show result alert and go back to Home
+    if (tournamentFinished) {
+      const finished = tournamentFinished;
+      setTournamentFinished(null);
+      setTimeout(() => {
+        const wins = finished.totalWins;
+        if (finished.won) {
+          // 3 vitórias reais — torneio vencido completo
+          Alert.alert(
+            t('tournamentWonTitle'),
+            t('tournamentWonBody').replace('{stars}', String(finished.stars)),
+            [{ text: 'OK', onPress: () => (navigation as any).navigate('Home') }]
+          );
+        } else if (wins >= 1) {
+          // Completou o torneio mas sem vitórias suficientes (teve empates)
+          const chestSuffix = wins >= 1 ? ` + ${t('chest')}` : '';
+          Alert.alert(
+            t('tournamentCompletedTitle'),
+            t('tournamentCompletedBody')
+              .replace('{wins}', String(wins))
+              .replace('{stars}', String(finished.stars))
+              .replace('{chest}', chestSuffix),
+            [{ text: 'OK', onPress: () => (navigation as any).navigate('Home') }]
+          );
+        } else {
+          // Eliminado ou só empatou tudo
+          const reason = finished.stars > 25 ? t('tournamentEndedNoWins') : t('tournamentEndedEliminated');
+          const consolation = t('tournamentConsolation').replace('{stars}', String(finished.stars));
+          Alert.alert(
+            t('tournamentEndedTitle'),
+            `${reason}\n\n${consolation}`,
+            [{ text: 'OK', onPress: () => (navigation as any).navigate('Home') }]
+          );
+        }
+      }, 200);
+      return;
+    }
+
+    // Tournament ACTIVE: advance to next round (whether last result was win OR draw)
+    // Both win and draw advance the tournament — only loss eliminates
+    const tournamentActive = tournamentService.isActive();
+    const playerWon = gameState.winner === 'X';
+    const playerDrew = !!(gameState as any).isDraw;
+    const shouldAdvanceTournament = tournamentActive && (playerWon || playerDrew);
+    const nextRound = tournamentActive ? tournamentService.getCurrentRound() : null;
+
+    if (shouldAdvanceTournament && nextRound) {
+      setTournamentNextRoundLabel(null);
+      setTimeout(() => {
+        if (!screenMountedRef.current) return;
+        setShowVictoryAnimation(false);
+        setGameStatsUpdated(false);
+        gameEndProcessedRef.current = false;
+        tournamentRecordedRef.current = false;
+        // CRITICAL: stay on the same GameScreen instance — do NOT navigation.replace.
+        // A remount makes the new GameScreen see the previous game's terminal
+        // state (winner / isDraw still set in GameContext until reset propagates),
+        // which causes the recording effect to fire a SECOND time and advance
+        // the tournament round twice. Just change difficulty + restart in place.
+        setDifficulty(nextRound.difficulty);
+        restartGame();
+      }, 200);
+      return;
+    }
+
+    // If chest pending, show it first
+    if (pendingChestRarity) {
+      setTimeout(() => setShowChestModal(true), 300);
+      return;
+    }
+
+    // Default: restart same game
+    setTimeout(() => {
+      try {
+        if (!screenMountedRef.current) return;
+        setShowVictoryAnimation(false);
+        setGameStatsUpdated(false);
+        gameEndProcessedRef.current = false;
+        restartGame();
+      } catch (e) {
+        console.warn('handlePlayAgain restart error:', e);
+      }
+    }, 200);
+  };
+
+  const handleShareResult = async () => {
+    try {
+      await triggerHaptics('medium');
+      const message = buildShareCard({
+        board: gameState.board,
+        winner: gameState.winner,
+        isDraw: !!(gameState as any).isDraw,
+        gameMode: getGameModeTitle(mode, opponent),
+        playerSymbol: opponent === 'online' ? playerSymbol : 'X',
+        labels: {
+          appName: t('homeTitle'),
+          won: t('shareWon'),
+          lost: t('shareLost'),
+          draw: t('shareDraw'),
+          callToAction: t('shareCallToAction'),
+        },
+      });
+      await Share.share({ message });
+    } catch (error) {
+      console.log('Share cancelled:', error);
+    }
+  };
+
+  // "Ver Tabuleiro" now does what it says: closes the modal so the final board
+  // (with the winning line already highlighted) is visible. It used to open the
+  // Replay, which is premium-gated — so a free player asking to see the board
+  // got a paywall instead. Replay kept its own entry in the game menu.
   const handleViewBoard = () => {
-    setShowGameEndModal(false);
+    setReplayMoves([...gameState.moves]);
+    setReplayWinner(gameState.winner);
     triggerHaptics('light');
+    setShowGameEndModal(false);
+  };
+
+  const handleOpenReplay = () => {
+    setReplayMoves([...gameState.moves]);
+    setReplayWinner(gameState.winner);
+    setShowMenu(false);
+    triggerHaptics('light');
+    setShowReplay(true);
   };
 
   const handleCloseModal = () => {
     setShowGameEndModal(false);
+    // If tournament finished, closing modal also goes back to Home
+    if (tournamentFinished) {
+      setTournamentFinished(null);
+      setTimeout(() => (navigation as any).navigate('Home'), 200);
+      return;
+    }
+    tryShowChest();
   };
 
 
@@ -582,27 +1001,36 @@ const GameScreen: React.FC = () => {
   };
 
   const getGameModeTitle = (mode: GameMode, opponent: OpponentType): string => {
-    const modeTitles: Record<GameMode, string> = {
-      classic: 'Clássico',
-      infinity: 'Infinito',
-      gravity: 'Gravity 🪐',
-      blind: 'Cego 🙈',
-      bigBoard: 'Grande 🏟️',
-      survival: 'Sobrevivência ❤️',
-      blitz: 'Blitz ⚡',
-      reverse: 'Reverso 🔄',
+    // Mode title comes from the nested i18n keys that already exist for every
+    // mode in every supported language (classic.title, infinity.title, etc.)
+    const modeIcons: Record<GameMode, string> = {
+      classic: '',
+      infinity: '',
+      gravity: '🪐',
+      blind: '🙈',
+      bigBoard: '🏟️',
+      survival: '❤️',
+      blitz: '⚡',
+      reverse: '🔄',
+      bomb: '💣',
+      mirror: '🪞',
+      mad: '🎲',
+      gobble: '🍽️',
     };
 
-    const modeTitle = modeTitles[mode] || 'Modo Desconhecido';
+    const baseTitle = t(`${mode}.title` as any);
+    const icon = modeIcons[mode] || '';
+    const modeTitle = icon ? `${baseTitle} ${icon}` : baseTitle;
 
     // Add Host indicator if online
     let suffix = '';
     if (opponent === 'online') {
-      suffix = isHost ? ' (👑 Host)' : ' (Convidado)';
+      suffix = isHost ? ` (👑 ${t('host')})` : ` (${t('guest')})`;
     } else if (opponent === 'ai') {
-      suffix = ` VS IA (${difficulty?.toUpperCase()})`;
+      const liveDiff = (gameConfig.difficulty || difficulty) as string | undefined;
+      suffix = ` ${t('vsAiSuffix').replace('{difficulty}', (liveDiff || '').toUpperCase())}`;
     } else {
-      suffix = ' - 2 Jogadores';
+      suffix = ` - ${t('twoPlayers.title')}`;
     }
 
     return modeTitle + suffix;
@@ -619,10 +1047,23 @@ const GameScreen: React.FC = () => {
   return (
     <LinearGradient colors={['#0A0A0A', '#1A1A2E']} style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.darkBackground} />
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={[styles.safeArea, { paddingTop: insets.top }]} edges={['left', 'right', 'bottom']}>
 
         {/* Mystic Background for Samuel theme */}
         <MysticBackground theme={theme} />
+
+        {/* Slowly turning seal behind the board, Samuel theme only */}
+        {theme === 'samuel' && (
+          <View style={styles.sealLayer} pointerEvents="none">
+            <MysticSeal size={280} opacity={0.22} />
+          </View>
+        )}
+
+        {/* Album-sticker background for Copa Nick theme */}
+        <CopaNickBackground theme={theme} />
+
+        {/* Living grid + scan line for the Matrix theme */}
+        <MatrixBackground theme={theme} />
 
         {/* Header */}
         <Animated.View entering={FadeInUp.duration(600)}>
@@ -649,6 +1090,22 @@ const GameScreen: React.FC = () => {
 
         {/* Game Score */}
         <Animated.View entering={FadeInUp.delay(200).duration(600)}>
+          {/* Online player names with avatar */}
+          {opponent === 'online' && (
+            <View style={styles.onlinePlayersBar}>
+              <View style={[styles.onlinePlayerInfo, gameState.currentPlayer === playerSymbol && styles.onlinePlayerActive]}>
+                <View style={styles.onlinePlayerAvatar}><PlayerAvatar id={myAvatarId} size={24} /></View>
+                <Text style={styles.onlinePlayerName} numberOfLines={1}>{playerName || t('youLabel')}</Text>
+              </View>
+              <Text style={styles.onlineVs}>VS</Text>
+              <View style={[styles.onlinePlayerInfo, gameState.currentPlayer !== playerSymbol && styles.onlinePlayerActive]}>
+                <View style={styles.onlinePlayerAvatar}>
+                  <Ionicons name="person-circle-outline" size={24} color={COLORS.lightGray} />
+                </View>
+                <Text style={styles.onlinePlayerName} numberOfLines={1}>{opponentName}</Text>
+              </View>
+            </View>
+          )}
           <GameScore
             currentPlayer={gameState.currentPlayer}
             gameStats={gameStats}
@@ -682,6 +1139,122 @@ const GameScreen: React.FC = () => {
           </Animated.View>
         )}
 
+        {/* Gobble mode: piece-size tray */}
+        {/* `piecesLeft` is read defensively: `gameMode` comes from the config and
+            `gameState` from the board, and the two are briefly out of step on the
+            frame this screen first mounts. Indexing it directly threw there and
+            took the whole app down. */}
+        {gameMode === 'gobble' && (gameState as GobbleGameState).piecesLeft && !gameState.winner && !(gameState as any).isDraw && (
+          <Animated.View entering={FadeInUp.delay(280).duration(500)}>
+            <GobbleSizePicker
+              currentPlayer={gameState.currentPlayer}
+              piecesLeft={(gameState as GobbleGameState).piecesLeft[gameState.currentPlayer]}
+              selectedSize={(gameState as GobbleGameState).selectedSize}
+              onSelect={(size: GobbleSize) => {
+                triggerHaptics('light');
+                selectGobbleSize(size);
+              }}
+              disabled={isAIThinking || (opponent === 'ai' && gameState.currentPlayer === 'O')}
+            />
+          </Animated.View>
+        )}
+
+        {/* Boost Bar - AI games only */}
+        {opponent === 'ai' && !gameState.winner && !(gameState as any).isDraw && gameState.currentPlayer === 'X' && (
+          <View style={styles.boostBar}>
+            <TouchableOpacity
+              style={styles.boostButton}
+              onPress={async () => {
+                if (boostService.getQuantity('boost_hint') <= 0) {
+                  Alert.alert(t('noBoostsTitle'), t('buyHintsInStore'));
+                  return;
+                }
+
+                // Compute the hint BEFORE spending the boost. It used to be
+                // consumed first, so when no valid move came back the player
+                // paid for silence.
+                // The AI engine always plays as O, so mirror the board
+                // (X<->O): the best O move there is the best X move here.
+                const hintAI = new AIPlayer('challenger');
+                hintAI.setDifficulty('challenger');
+                const winLen = gameMode === 'bigBoard' ? (gameState as any).winCondition || 4 : 3;
+                const mirrored = gameState.board.map(r =>
+                  r.map(c => (c === 'X' ? 'O' : c === 'O' ? 'X' : null))
+                ) as typeof gameState.board;
+                const isInf = gameMode === 'infinity';
+                // Mirror the players in the moves list too, so the infinity
+                // removal simulation stays consistent with the mirrored board.
+                const liveMoves = (isInf
+                  ? gameState.moves.slice((gameState as any).oldestMoveIndex || 0)
+                  : gameState.moves
+                ).map(m => ({ ...m, player: (m.player === 'X' ? 'O' : 'X') as typeof m.player }));
+                const hintMove = hintAI.getBestMove(mirrored, isInf, liveMoves, isInf ? 6 : undefined, false, winLen);
+
+                if (!hintMove || hintMove.row < 0) {
+                  Alert.alert(t('hintTitle'), t('hintUnavailable'));
+                  return;
+                }
+
+                const used = await boostService.use('boost_hint');
+                if (!used) {
+                  Alert.alert(t('noBoostsTitle'), t('buyHintsInStore'));
+                  return;
+                }
+                await triggerHaptics('medium');
+                Alert.alert(t('hintTitle'), t('hintBody')
+                  .replace('{row}', String(hintMove.row + 1))
+                  .replace('{col}', String(hintMove.col + 1)));
+              }}
+            >
+              <Text style={styles.boostEmoji}>💡</Text>
+              <Text style={styles.boostCount}>{boostService.getQuantity('boost_hint')}</Text>
+            </TouchableOpacity>
+
+            {gameMode === 'blitz' && (
+              <TouchableOpacity
+                style={styles.boostButton}
+                onPress={async () => {
+                  const used = await boostService.use('boost_extra_time');
+                  if (!used) {
+                    Alert.alert(t('noBoostsTitle'), t('buyExtraTimeInStore'));
+                    return;
+                  }
+                  await triggerHaptics('medium');
+                  await playSound('button');
+                  addBlitzTime(3);
+                }}
+              >
+                <Text style={styles.boostEmoji}>⏱️</Text>
+                <Text style={styles.boostCount}>{boostService.getQuantity('boost_extra_time')}</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Undo — chests already granted this boost but nothing could
+                spend it, so the reward was dead inventory. */}
+            <TouchableOpacity
+              style={styles.boostButton}
+              onPress={async () => {
+                if (gameState.moves.length === 0) return;
+                if (boostService.getQuantity('boost_undo') <= 0) {
+                  Alert.alert(t('noBoostsTitle'), t('buyUndoInStore'));
+                  return;
+                }
+                const used = await boostService.use('boost_undo');
+                if (!used) {
+                  Alert.alert(t('noBoostsTitle'), t('buyUndoInStore'));
+                  return;
+                }
+                await triggerHaptics('medium');
+                await playSound('button');
+                undoLastMoves();
+              }}
+            >
+              <Text style={styles.boostEmoji}>↩️</Text>
+              <Text style={styles.boostCount}>{boostService.getQuantity('boost_undo')}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Game Board */}
         <Animated.View
           entering={FadeInUp.delay(400).duration(800)}
@@ -694,7 +1267,7 @@ const GameScreen: React.FC = () => {
               winningLine={winningLine}
               moves={gameState.moves}
               isInfinityMode={false}
-              disabled={!!gameState.winner || (gameState as any).isDraw || isAIThinking || (opponent === 'ai' && gameState.currentPlayer === 'O')}
+              disabled={!!gameState.winner || (gameState as any).isDraw || isAIThinking || (opponent === 'ai' && gameState.currentPlayer === 'O') || !!(gameState as GravityGameState).pendingFall?.isAnimating}
               pendingFall={(gameState as GravityGameState).pendingFall}
               onGravityFallComplete={completeGravityFall}
             />
@@ -721,6 +1294,13 @@ const GameScreen: React.FC = () => {
               winningLine={winningLine}
               moves={gameState.moves}
               isInfinityMode={isInfinityMode}
+              nextToRemove={isInfinityMode ? (gameState as any).nextToRemove : null}
+              frozenCell={
+                gameMode === 'mad' && (gameState as MadGameState).frozenTurnsLeft > 0
+                  ? (gameState as MadGameState).frozenCell
+                  : null
+              }
+              cellSizes={gameMode === 'gobble' ? (gameState as GobbleGameState).cellSizes : null}
               disabled={!!gameState.winner || (gameState as any).isDraw || isAIThinking || (opponent === 'ai' && gameState.currentPlayer === 'O')}
             />
           )}
@@ -753,7 +1333,7 @@ const GameScreen: React.FC = () => {
             <View style={styles.infinityCard}>
               <Ionicons name="infinite" size={20} color={COLORS.info} />
               <Text style={styles.infinityText}>
-                {t('pieces')}: {gameState.moves.length}/6
+                {t('pieces')}: {gameState.board.flat().filter(Boolean).length}/6
               </Text>
               {gameState.moves.length >= 6 && (
                 <Text style={styles.infinitySubtext}>
@@ -785,6 +1365,22 @@ const GameScreen: React.FC = () => {
                   <Ionicons name="reload-outline" size={20} color={COLORS.error} />
                   <Text style={[styles.menuItemText, { color: COLORS.error }]}>
                     {t('restartGame')}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Replay's only entrance used to be the "Ver Tabuleiro" button,
+                  which promised the board and delivered a paywall. It lives
+                  here now, labelled for what it is. */}
+              {(gameState.winner || (gameState as any).isDraw) && (
+                <TouchableOpacity
+                  onPress={handleOpenReplay}
+                  style={styles.menuItem}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="play-circle-outline" size={20} color={COLORS.gold} />
+                  <Text style={[styles.menuItemText, { color: COLORS.gold }]}>
+                    {t('watchReplay')}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -834,6 +1430,14 @@ const GameScreen: React.FC = () => {
           />
         )}
 
+        {/* Emote Bar - online only */}
+        {opponent === 'online' && (
+          <EmoteBar
+            onSendEmote={handleSendEmote}
+            receivedEmote={receivedEmote}
+          />
+        )}
+
         {/* Troll Message */}
         {trollMessage && (
           <TrollMessage
@@ -850,7 +1454,65 @@ const GameScreen: React.FC = () => {
           gameMode={getGameModeTitle(mode, opponent)}
           onPlayAgain={handlePlayAgain}
           onViewBoard={handleViewBoard}
+          onShare={handleShareResult}
           onClose={handleCloseModal}
+          rewards={lastRewards && { ...lastRewards, chest: pendingChestRarity }}
+          playAgainLabel={
+            tournamentFinished
+              ? (tournamentFinished.won ? t('viewPrize') : t('backToHome'))
+              : tournamentNextRoundLabel || undefined
+          }
+        />
+
+        {/* Chest Modal */}
+        <ChestModal
+          visible={showChestModal}
+          chestRarity={pendingChestRarity}
+          onOpen={async () => {
+            return await chestService.openChest();
+          }}
+          onOpenWithAd={async () => {
+            // Show rewarded ad, then open chest if ad completed
+            const reward = await adMobService.showRewarded();
+            if (reward) {
+              return await chestService.openChest();
+            }
+            // Ad failed or skipped — don't open
+            Alert.alert(t('adTitle'), t('adIncompleteBody'));
+            return null;
+          }}
+          onClose={() => {
+            setShowChestModal(false);
+            setPendingChestRarity(null);
+            // If game end modal was already closed (user clicked Play Again), restart now
+            if (!showGameEndModal && !showOnlineEndModal) {
+              setTimeout(() => {
+                setShowVictoryAnimation(false);
+                setGameStatsUpdated(false);
+                gameEndProcessedRef.current = false;
+                restartGame();
+              }, 200);
+            }
+          }}
+        />
+
+        {/* Replay Modal */}
+        <ReplayModal
+          visible={showReplay}
+          moves={replayMoves}
+          boardSize={gameState.board.length}
+          winner={replayWinner}
+          isPremium={iapService.isSubscribed()}
+          onClose={() => {
+            setShowReplay(false);
+            // If tournament finished, replay close also returns to Home
+            if (tournamentFinished) {
+              setTournamentFinished(null);
+              setTimeout(() => (navigation as any).navigate('Home'), 200);
+              return;
+            }
+            tryShowChest();
+          }}
         />
 
         {/* Online Game End Modal */}
@@ -881,12 +1543,101 @@ const GameScreen: React.FC = () => {
         {/* Remove Ads Floating Button - visible during game */}
         <RemoveAdsButton variant="floating" />
 
+        {/* Mad mode mutation announcement */}
+        {madBanner && (
+          <MadMutationBanner
+            mutationId={madBanner.id}
+            type={madBanner.type}
+            onDone={() => setMadBanner(null)}
+          />
+        )}
+
+        {/* Bomb mode explosion */}
+        {bombBlast && (
+          <BombExplosion
+            explosionKey={bombBlast.key}
+            message={bombBlast.message}
+            onDone={() => setBombBlast(null)}
+          />
+        )}
+
+        {/* Level Up celebration */}
+        <LevelUpAnimation
+          visible={levelUpInfo.visible}
+          newLevel={levelUpInfo.level}
+          onClose={() => setLevelUpInfo({ visible: false, level: 0 })}
+        />
+
       </SafeAreaView>
     </LinearGradient>
   );
 };
 
 const styles = StyleSheet.create({
+  onlinePlayersBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.md,
+    paddingVertical: SPACING.xs,
+  },
+  onlinePlayerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.darkSecondary,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    borderRadius: BORDER_RADIUS.md,
+    opacity: 0.6,
+  },
+  onlinePlayerActive: {
+    opacity: 1,
+    borderWidth: 1,
+    borderColor: COLORS.xColor,
+  },
+  // Centred behind the board; purely decorative, never intercepts touches.
+  sealLayer: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  onlinePlayerAvatar: {
+    width: 24,
+    height: 24,
+  },
+  onlinePlayerName: {
+    ...createTextStyle('sm', 'bold'),
+    color: COLORS.white,
+    maxWidth: 80,
+  },
+  onlineVs: {
+    ...createTextStyle('xs', 'bold'),
+    color: COLORS.gray,
+  },
+  boostBar: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: SPACING.md,
+    paddingVertical: SPACING.xs,
+  },
+  boostButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.darkSecondary,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    borderRadius: BORDER_RADIUS.md,
+    gap: 4,
+    ...SHADOWS.light,
+  },
+  boostEmoji: {
+    fontSize: 18,
+  },
+  boostCount: {
+    ...createTextStyle('xs', 'bold'),
+    color: COLORS.lightGray,
+  },
   container: {
     flex: 1,
   },

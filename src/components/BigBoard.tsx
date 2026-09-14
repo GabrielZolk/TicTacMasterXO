@@ -1,20 +1,24 @@
 import React from 'react';
 import { View, StyleSheet, Dimensions } from 'react-native';
-import Animated, { 
-  useSharedValue, 
-  useAnimatedStyle, 
-  withTiming, 
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
   withSequence,
 } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { Cell, WinningLine, GameMove } from '../types/game';
 import GameCell from './GameCell';
-import { 
-  COLORS, 
-  SPACING, 
+import {
+  COLORS,
+  SPACING,
   BORDER_RADIUS,
   SHADOWS,
+  getStorePreviewGradient,
 } from '../utils/theme';
+import { useTheme } from '../hooks/useTheme';
+import { useEquippedBoardSkin } from '../hooks/useEquippedItems';
 
 const { width } = Dimensions.get('window');
 
@@ -33,6 +37,8 @@ const BigBoard: React.FC<BigBoardProps> = ({
   moves,
   disabled = false,
 }) => {
+  const { colors, theme } = useTheme();
+  const boardSkin = useEquippedBoardSkin();
   const boardScale = useSharedValue(1);
   const borderGlow = useSharedValue(0);
 
@@ -73,9 +79,34 @@ const BigBoard: React.FC<BigBoardProps> = ({
   const availableWidth = width - SPACING.lg * 4;
   const cellSize = (availableWidth - SPACING.xs * (boardSize - 1)) / boardSize;
 
+  const isThemeSkin = boardSkin.id === 'skin_default';
+  // Use the same bright gradient as the store preview, not the dark
+  // background gradient from getThemeColors().
+  const themeGradient = isThemeSkin ? getStorePreviewGradient(theme) : undefined;
+
   return (
     <View style={styles.container}>
-      <Animated.View style={[styles.board, boardAnimatedStyle]}>
+      <Animated.View style={[
+        styles.board,
+        {
+          backgroundColor: isThemeSkin ? 'transparent' : boardSkin.boardBackground,
+          overflow: 'hidden',
+        },
+        boardSkin.glowColor ? {
+          shadowColor: boardSkin.glowColor,
+          shadowOpacity: 0.5,
+          shadowRadius: 12,
+          elevation: 10,
+        } : null,
+        boardAnimatedStyle,
+      ]}>
+        {/* Theme gradient — matches store preview EXACTLY (top→bottom). */}
+        {isThemeSkin && themeGradient && themeGradient.length > 1 && (
+          <LinearGradient
+            colors={themeGradient as any}
+            style={StyleSheet.absoluteFill}
+          />
+        )}
         {board.map((row, rowIndex) => (
           <View key={rowIndex} style={styles.row}>
             {row.map((cell, colIndex) => (

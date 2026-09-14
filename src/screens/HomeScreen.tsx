@@ -1,16 +1,17 @@
-import React from 'react';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   StatusBar,
   TouchableOpacity,
   Dimensions,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
@@ -20,6 +21,7 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   withTiming,
+  withSequence,
 } from 'react-native-reanimated';
 
 import { RootStackParamList, GameMode } from '../types/game';
@@ -38,6 +40,15 @@ import {
   DIMENSIONS,
 } from '../utils/theme';
 import AdBanner from '../components/AdBanner';
+import { chestService } from '../services/chestService';
+import { dailyDuelService } from '../services/dailyDuelService';
+import { storeService } from '../services/storeService';
+import FortuneWheel from '../components/FortuneWheel';
+import ChestModal from '../components/ChestModal';
+import XPBar from '../components/XPBar';
+import adMobService from '../services/adMobService';
+import { ChestRarity } from '../types/chest';
+import { SHOW_TOURNAMENT } from '../config/features';
 
 type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Home'>;
 
@@ -100,6 +111,38 @@ const getGameModes = (t: any): GameModeOption[] => [
     description: t('reverse.description'),
   },
   {
+    id: 'bomb',
+    title: `${t('bomb.title')} 💣`,
+    subtitle: t('bomb.subtitle'),
+    icon: 'flame-outline',
+    color: COLORS.error,
+    description: t('bomb.description'),
+  },
+  {
+    id: 'mirror',
+    title: `${t('mirror.title')} 🪞`,
+    subtitle: t('mirror.subtitle'),
+    icon: 'copy-outline',
+    color: COLORS.info,
+    description: t('mirror.description'),
+  },
+  {
+    id: 'mad',
+    title: `${t('mad.title')} 🎲`,
+    subtitle: t('mad.subtitle'),
+    icon: 'shuffle-outline',
+    color: COLORS.warning,
+    description: t('mad.description'),
+  },
+  {
+    id: 'gobble',
+    title: `${t('gobble.title')} 🍽️`,
+    subtitle: t('gobble.subtitle'),
+    icon: 'ellipse-outline',
+    color: COLORS.gold,
+    description: t('gobble.description'),
+  },
+  {
     id: 'bigBoard',
     title: `${t('bigBoard.title')} 🏟️`,
     subtitle: t('bigBoard.subtitle'),
@@ -122,12 +165,82 @@ const HomeScreen: React.FC = () => {
   const { setGameMode, playSound, triggerHaptics, gameStats } = useGame();
   const { theme, colors } = useTheme();
   const { t } = useI18n();
+  const insets = useSafeAreaInsets();
   const buttonScale = useSharedValue(1);
+  const [pendingChests, setPendingChests] = useState(0);
+  const [loginStreak, setLoginStreak] = useState(0);
+  const [showFortuneWheel, setShowFortuneWheel] = useState(false);
+  const [canSpinWheel, setCanSpinWheel] = useState(false);
+  const [showChestModal, setShowChestModal] = useState(false);
+  const [currentChestRarity, setCurrentChestRarity] = useState<ChestRarity | null>(null);
+  const [duelSolved, setDuelSolved] = useState(false);
+  const [duelStreak, setDuelStreak] = useState(0);
 
-  // Filtrar modos ocultos (bigBoard e survival)
-  const gameModes = getGameModes(t).filter(mode =>
-    mode.id !== 'bigBoard' && mode.id !== 'survival'
+  const handleOpenChestFromHome = async () => {
+    const pending = chestService.getPendingChests();
+    if (pending.length === 0) return;
+    await triggerHaptics('medium');
+    await playSound('button');
+    setCurrentChestRarity(pending[0]);
+    setShowChestModal(true);
+  };
+
+  // Load pending chests + login streak + check daily reward on mount
+  useEffect(() => {
+    const loadChests = () => setPendingChests(chestService.getPendingChests().length);
+    loadChests();
+    const unsub = chestService.subscribe(loadChests);
+
+    // Load streak
+    storeService.initialize().then(async (data) => {
+      setLoginStreak(data.consecutiveDays || 0);
+      const canClaim = await storeService.canClaimDailyReward();
+      setCanSpinWheel(canClaim);
+    }).catch(() => {});
+
+    // Daily Duel status for the banner
+    const refreshDuel = () => {
+      const s = dailyDuelService.getState();
+      setDuelSolved(s.solved);
+      setDuelStreak(s.streak);
+    };
+    dailyDuelService.initialize().then(refreshDuel).catch(() => {});
+    const unsubDuel = dailyDuelService.subscribe(refreshDuel);
+
+    return () => {
+      unsub();
+      unsubDuel();
+    };
+  }, []);
+
+  // Refresh the duel banner whenever the player returns to Home
+  useFocusEffect(
+    useCallback(() => {
+      const s = dailyDuelService.getState();
+      setDuelSolved(s.solved);
+      setDuelStreak(s.streak);
+    }, [])
   );
+
+  // Pulse animation when totalGames changes
+  const badgeScale = useSharedValue(1);
+  const prevTotalGames = useRef(gameStats.totalGames);
+
+  useEffect(() => {
+    if (gameStats.totalGames > prevTotalGames.current) {
+      badgeScale.value = withSequence(
+        withTiming(1.4, { duration: 150 }),
+        withSpring(1, { damping: 8 })
+      );
+    }
+    prevTotalGames.current = gameStats.totalGames;
+  }, [gameStats.totalGames]);
+
+  const badgeAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: badgeScale.value }],
+  }));
+
+  const gameModes = getGameModes(t);
 
   const handleGameModePress = async (mode: GameMode) => {
     await triggerHaptics('medium');
@@ -167,46 +280,98 @@ const HomeScreen: React.FC = () => {
         barStyle={theme === 'dark' ? 'light-content' : 'dark-content'}
         backgroundColor={colors.background}
       />
-      <SafeAreaView style={styles.safeArea}>
+      <View style={[styles.safeArea, { paddingTop: insets.top + 4, paddingLeft: insets.left, paddingRight: insets.right }]}>
 
-        {/* Header with Settings, Stats and Remove Ads */}
+        {/* Top bar: Settings / Remove Ads / Profile + Stats */}
+        {/* Shortcut row below: Store / Battle Pass / Challenges */}
         <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <TouchableOpacity
-              onPress={handleSettingsPress}
-              style={styles.headerButton}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="settings-outline" size={24} color={COLORS.white} />
-            </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleSettingsPress}
+            style={styles.headerButton}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="settings-outline" size={22} color={COLORS.white} />
+          </TouchableOpacity>
 
+          <RemoveAdsButton variant="inline" />
+
+          <View style={styles.headerRight}>
             <TouchableOpacity
               onPress={async () => {
                 await triggerHaptics('light');
                 await playSound('button');
-                (navigation as any).navigate('Store');
+                (navigation as any).navigate('Profile');
               }}
-              style={[styles.headerButton, styles.storeButton]}
+              style={[styles.headerButton, styles.profileButton]}
               activeOpacity={0.7}
             >
-              <Ionicons name="storefront-outline" size={24} color={COLORS.gold} />
+              <Ionicons name="person-outline" size={22} color={COLORS.info} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handleStatsPress}
+              style={styles.headerButton}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="stats-chart-outline" size={22} color={COLORS.white} />
+              {gameStats.totalGames > 0 && (
+                <Animated.View style={[styles.badge, badgeAnimatedStyle]}>
+                  <Text style={styles.badgeText}>{gameStats.totalGames}</Text>
+                </Animated.View>
+              )}
             </TouchableOpacity>
           </View>
+        </View>
 
-          {/* Remove Ads Button - prominently displayed */}
-          <RemoveAdsButton variant="inline" />
+        {/* Player XP / Level — persistent, taps to BattlePass */}
+        <View style={styles.xpBarWrapper}>
+          <XPBar />
+        </View>
 
+        {/* Shortcut row: Store / BattlePass / Challenges */}
+        <View style={styles.shortcutRow}>
           <TouchableOpacity
-            onPress={handleStatsPress}
-            style={styles.headerButton}
+            onPress={async () => {
+              await triggerHaptics('light');
+              await playSound('button');
+              (navigation as any).navigate('Store');
+            }}
+            style={[styles.shortcutButton, { borderColor: COLORS.gold }]}
             activeOpacity={0.7}
           >
-            <Ionicons name="stats-chart-outline" size={24} color={COLORS.white} />
-            {gameStats.totalGames > 0 && (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>{gameStats.totalGames}</Text>
+            <Ionicons name="storefront-outline" size={18} color={COLORS.gold} />
+            <Text style={[styles.shortcutText, { color: COLORS.gold }]}>{t('store')}</Text>
+            {pendingChests > 0 && (
+              <View style={styles.chestBadge}>
+                <Text style={styles.chestBadgeText}>{pendingChests}</Text>
               </View>
             )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={async () => {
+              await triggerHaptics('light');
+              await playSound('button');
+              (navigation as any).navigate('BattlePass');
+            }}
+            style={[styles.shortcutButton, { borderColor: COLORS.xColor }]}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="ribbon-outline" size={18} color={COLORS.xColor} />
+            <Text style={[styles.shortcutText, { color: COLORS.xColor }]}>{t('battlePass')}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={async () => {
+              await triggerHaptics('light');
+              await playSound('button');
+              (navigation as any).navigate('Challenges');
+            }}
+            style={[styles.shortcutButton, { borderColor: COLORS.success }]}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="flag-outline" size={18} color={COLORS.success} />
+            <Text style={[styles.shortcutText, { color: COLORS.success }]}>{t('challenges')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -219,6 +384,108 @@ const HomeScreen: React.FC = () => {
           <Animated.View entering={FadeInUp.delay(300).duration(800)} style={styles.logoSection}>
             <GameLogo size="large" animated={true} />
           </Animated.View>
+
+          {/* Login Streak + Fortune Wheel button */}
+          <Animated.View entering={FadeInUp.delay(400).duration(600)} style={styles.streakContainer}>
+            {loginStreak > 0 && (
+              <>
+                <Text style={styles.streakFire}>
+                  {loginStreak >= 7 ? '🔥🔥🔥' : loginStreak >= 3 ? '🔥🔥' : '🔥'}
+                </Text>
+                <Text style={styles.streakText}>{loginStreak} {loginStreak === 1 ? t('dayInARow') : t('daysInARow')}</Text>
+              </>
+            )}
+            {canSpinWheel && (
+              <TouchableOpacity
+                style={styles.wheelButton}
+                onPress={async () => {
+                  await triggerHaptics('medium');
+                  await playSound('button');
+                  setShowFortuneWheel(true);
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.wheelButtonText}>{t('spinWheel')}</Text>
+              </TouchableOpacity>
+            )}
+          </Animated.View>
+
+          {/* Chests Banner — visible when there are pending chests */}
+          {pendingChests > 0 && (
+            <Animated.View entering={FadeInUp.delay(400).duration(500)}>
+              <TouchableOpacity
+                style={styles.chestBanner}
+                onPress={handleOpenChestFromHome}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.chestBannerIcon}>📦</Text>
+                <View style={styles.chestBannerInfo}>
+                  <Text style={styles.chestBannerTitle}>
+                    {t('chestBannerTitle').replace('{count}', String(pendingChests)).replace('{noun}', pendingChests === 1 ? t('chestSingular') : t('chestPlural'))}
+                  </Text>
+                  <Text style={styles.chestBannerDesc}>{t('chestBannerDesc')}</Text>
+                </View>
+                <View style={styles.chestBannerBadge}>
+                  <Text style={styles.chestBannerBadgeText}>{t('openChest')}</Text>
+                </View>
+              </TouchableOpacity>
+            </Animated.View>
+          )}
+
+          {/* Daily Duel Banner — the shared puzzle of the day */}
+          <Animated.View entering={FadeInUp.delay(430).duration(600)}>
+            <TouchableOpacity
+              onPress={async () => {
+                await triggerHaptics('medium');
+                await playSound('button');
+                (navigation as any).navigate('DailyDuel');
+              }}
+              activeOpacity={0.85}
+            >
+              <LinearGradient
+                colors={duelSolved ? ['#1B5E20', '#2E7D32'] : ['#4A148C', '#7B1FA2']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.duelBanner}
+              >
+                <Text style={styles.duelIcon}>{duelSolved ? '✅' : '⚔️'}</Text>
+                <View style={styles.duelInfo}>
+                  <Text style={styles.duelTitle}>{t('dailyDuel')}</Text>
+                  <Text style={styles.duelDesc}>
+                    {duelSolved ? t('duelDoneToday') : t('duelCallToAction')}
+                  </Text>
+                </View>
+                {duelStreak > 0 && (
+                  <View style={styles.duelStreakPill}>
+                    <Text style={styles.duelStreakText}>🔥 {duelStreak}</Text>
+                  </View>
+                )}
+                <Ionicons name="chevron-forward" size={20} color={COLORS.white} />
+              </LinearGradient>
+            </TouchableOpacity>
+          </Animated.View>
+
+          {/* Tournament Banner — temporarily hidden (SHOW_TOURNAMENT) */}
+          {SHOW_TOURNAMENT && (
+          <Animated.View entering={FadeInUp.delay(450).duration(600)}>
+            <TouchableOpacity
+              style={styles.tournamentBanner}
+              onPress={async () => {
+                await triggerHaptics('medium');
+                await playSound('button');
+                (navigation as any).navigate('Tournament');
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.tournamentIcon}>🏆</Text>
+              <View style={styles.tournamentInfo}>
+                <Text style={styles.tournamentTitle}>{t('tournament')}</Text>
+                <Text style={styles.tournamentDesc}>{t('tournamentDesc')}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={COLORS.gold} />
+            </TouchableOpacity>
+          </Animated.View>
+          )}
 
           {/* Game Modes Section */}
           <Animated.View entering={FadeInDown.delay(500).duration(800)} style={styles.gameModesSection}>
@@ -264,7 +531,53 @@ const HomeScreen: React.FC = () => {
 
         {/* Ad Banner at bottom */}
         <AdBanner size="BANNER" style={styles.adBanner} />
-      </SafeAreaView>
+
+        {/* Fortune Wheel — daily reward */}
+        <FortuneWheel
+          visible={showFortuneWheel}
+          onResult={async (value) => {
+            // The wheel prize is only paid together with a VALID daily claim.
+            // Previously it was granted unconditionally, so a refused claim
+            // (already claimed today, clock tampering) still paid out the wheel.
+            const claim = await storeService.claimDailyReward();
+            if (claim.success) {
+              await storeService.addCurrency('stars', value, `Roda da Fortuna: ${value} estrelas`);
+              playSound('win');
+              triggerHaptics('heavy');
+            }
+            // Reload streak
+            const data = await storeService.initialize();
+            setLoginStreak(data.consecutiveDays || 0);
+          }}
+          onClose={() => {
+            setShowFortuneWheel(false);
+            setCanSpinWheel(false);
+          }}
+        />
+
+        {/* Chest Modal — opens from chest banner */}
+        <ChestModal
+          visible={showChestModal}
+          chestRarity={currentChestRarity}
+          onOpen={async () => {
+            return await chestService.openChest();
+          }}
+          onOpenWithAd={async () => {
+            const reward = await adMobService.showRewarded();
+            if (reward) {
+              return await chestService.openChest();
+            }
+            Alert.alert(t('adTitle'), t('adIncompleteBody'));
+            return null;
+          }}
+          onClose={() => {
+            setShowChestModal(false);
+            setCurrentChestRarity(null);
+            // Refresh count — if more chests pending, banner remains
+            setPendingChests(chestService.getPendingChests().length);
+          }}
+        />
+      </View>
     </LinearGradient>
   );
 };
@@ -301,15 +614,188 @@ const styles = StyleSheet.create({
     ...SHADOWS.light,
     position: 'relative',
   },
-  headerLeft: {
+  headerRight: {
     flexDirection: 'row',
-    gap: SPACING.sm,
+    gap: SPACING.xs,
     alignItems: 'center',
   },
-  storeButton: {
+  xpBarWrapper: {
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.xs,
+    paddingBottom: SPACING.xs,
+  },
+  shortcutRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.xs,
+    paddingBottom: SPACING.sm,
+    gap: SPACING.xs,
+  },
+  shortcutButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.darkSecondary + 'CC',
+    borderWidth: 1,
+    borderRadius: BORDER_RADIUS.md,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    gap: 4,
+    ...SHADOWS.light,
+    position: 'relative',
+  },
+  shortcutText: {
+    ...createTextStyle('xs', 'bold'),
+  },
+  profileButton: {
+    backgroundColor: COLORS.info + '20',
+    borderWidth: 1,
+    borderColor: COLORS.info,
+  },
+  chestBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.warning + '20',
+    borderRadius: BORDER_RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.warning + '60',
+    padding: SPACING.md,
+    marginBottom: SPACING.sm,
+    gap: SPACING.md,
+    ...SHADOWS.light,
+  },
+  chestBannerIcon: {
+    fontSize: 36,
+  },
+  chestBannerInfo: {
+    flex: 1,
+  },
+  chestBannerTitle: {
+    ...createTextStyle('md', 'bold'),
+    color: COLORS.warning,
+  },
+  chestBannerDesc: {
+    ...createTextStyle('xs', 'regular'),
+    color: COLORS.lightGray,
+  },
+  chestBannerBadge: {
+    backgroundColor: COLORS.warning,
+    borderRadius: BORDER_RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 6,
+  },
+  chestBannerBadgeText: {
+    ...createTextStyle('sm', 'bold'),
+    color: COLORS.darkBackground,
+  },
+  duelBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    borderRadius: BORDER_RADIUS.lg,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    marginHorizontal: SPACING.lg,
+    marginBottom: SPACING.sm,
+    ...SHADOWS.medium,
+  },
+  duelIcon: {
+    fontSize: 30,
+  },
+  duelInfo: {
+    flex: 1,
+  },
+  duelTitle: {
+    ...createTextStyle('md', 'bold'),
+    color: COLORS.white,
+  },
+  duelDesc: {
+    ...createTextStyle('xs', 'regular'),
+    color: 'rgba(255,255,255,0.85)',
+    marginTop: 2,
+  },
+  duelStreakPill: {
+    backgroundColor: 'rgba(0,0,0,0.28)',
+    borderRadius: 99,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  duelStreakText: {
+    ...createTextStyle('xs', 'bold'),
+    color: COLORS.white,
+  },
+  tournamentBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.gold + '15',
+    borderRadius: BORDER_RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.gold + '40',
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+    gap: SPACING.md,
+    ...SHADOWS.light,
+  },
+  tournamentIcon: {
+    fontSize: 32,
+  },
+  tournamentInfo: {
+    flex: 1,
+  },
+  tournamentTitle: {
+    ...createTextStyle('md', 'bold'),
+    color: COLORS.gold,
+  },
+  tournamentDesc: {
+    ...createTextStyle('xs', 'regular'),
+    color: COLORS.lightGray,
+  },
+  streakContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: SPACING.xs,
+    marginBottom: SPACING.xs,
+  },
+  streakFire: {
+    fontSize: 16,
+  },
+  streakText: {
+    ...createTextStyle('sm', 'bold'),
+    color: COLORS.warning,
+  },
+  wheelButton: {
     backgroundColor: COLORS.gold + '20',
     borderWidth: 1,
     borderColor: COLORS.gold,
+    borderRadius: BORDER_RADIUS.lg,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    marginLeft: SPACING.sm,
+  },
+  wheelButtonText: {
+    ...createTextStyle('sm', 'bold'),
+    color: COLORS.gold,
+  },
+  chestBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    backgroundColor: COLORS.warning,
+    borderRadius: 10,
+    minWidth: 24,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  chestBadgeText: {
+    fontSize: 10,
+    color: COLORS.white,
+    fontWeight: 'bold',
   },
   badge: {
     position: 'absolute',
@@ -358,7 +844,12 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     padding: SPACING.md,
     ...SHADOWS.medium,
-    height: 185, // Altura aumentada para acomodar o texto completo
+    // A fixed height here clipped the five longest descriptions (Blitz, Bomba,
+    // Espelho, Velha Maluca, Comilão) mid-letter on a 390px screen. `minHeight`
+    // keeps the short cards looking the same as before; `flex: 1` makes both
+    // cards in a row take the height of the taller one, so the grid stays even.
+    flex: 1,
+    minHeight: 185,
   },
   gameModeCardContent: {
     alignItems: 'center',

@@ -10,14 +10,15 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { Player, GameStats } from '../types/game';
-import { 
-  COLORS, 
-  SPACING, 
+import {
+  COLORS,
+  SPACING,
   BORDER_RADIUS,
   SHADOWS,
   getPlayerColor,
   createTextStyle,
 } from '../utils/theme';
+import { useI18n } from '../i18n/useI18n';
 
 interface GameScoreProps {
   currentPlayer: Player;
@@ -34,6 +35,7 @@ const GameScore: React.FC<GameScoreProps> = ({
   isDraw = false,
   gameMode,
 }) => {
+  const { t } = useI18n();
   const playerXScale = useSharedValue(1);
   const playerOScale = useSharedValue(1);
   const statusAnimation = useSharedValue(0);
@@ -69,12 +71,13 @@ const GameScore: React.FC<GameScoreProps> = ({
 
   const getStatusMessage = (): string => {
     if (winner) {
-      return `Player ${winner} Wins!`;
+      return t('playerWins', { player: winner });
     }
     if (isDraw) {
-      return "It's a Draw!";
+      return t('draw');
     }
-    return `Player ${currentPlayer}'s Turn`;
+    // playerTurn key is "Vez do Jogador" / "Player Turn" — append the symbol
+    return `${t('playerTurn')} ${currentPlayer}`;
   };
 
   const getStatusColor = (): string => {
@@ -140,11 +143,11 @@ const GameScore: React.FC<GameScoreProps> = ({
           <Text style={[styles.playerSymbol, { color: COLORS.xColor }]}>✗</Text>
         </View>
         <View style={styles.playerInfo}>
-          <Text style={styles.playerLabel}>Player X</Text>
+          <Text style={styles.playerLabel}>{t('playerLabel')} X</Text>
           <Text style={[styles.playerScore, { color: COLORS.xColor }]}>
             {gameStats.playerX.wins}
           </Text>
-          <Text style={styles.playerSubtitle}>wins</Text>
+          <Text style={styles.playerSubtitle}>{t('wins').toLowerCase()}</Text>
         </View>
       </Animated.View>
 
@@ -162,11 +165,11 @@ const GameScore: React.FC<GameScoreProps> = ({
           <Text style={[styles.playerSymbol, { color: COLORS.oColor }]}>○</Text>
         </View>
         <View style={styles.playerInfo}>
-          <Text style={styles.playerLabel}>Player O</Text>
+          <Text style={styles.playerLabel}>{t('playerLabel')} O</Text>
           <Text style={[styles.playerScore, { color: COLORS.oColor }]}>
             {gameStats.playerO.wins}
           </Text>
-          <Text style={styles.playerSubtitle}>wins</Text>
+          <Text style={styles.playerSubtitle}>{t('wins').toLowerCase()}</Text>
         </View>
       </Animated.View>
     </View>

@@ -1,9 +1,10 @@
+import { SafeAreaView } from 'react-native-safe-area-context';
 import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
+
   StatusBar,
   TouchableOpacity,
   ScrollView,
@@ -14,9 +15,11 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 
-import { RootStackParamList, GameMode, OpponentType } from '../types/game';
+import { RootStackParamList, GameMode, OpponentType, Difficulty } from '../types/game';
 import { useGame } from '../contexts/GameContext';
 import { useI18n } from '../i18n/useI18n';
+import { rankedService } from '../services/rankedService';
+import { getLeagueForPoints } from '../types/ranked';
 import AppHeader from '../components/AppHeader';
 import {
   COLORS,
@@ -58,21 +61,39 @@ const OpponentScreen: React.FC = () => {
     },
     {
       id: 'human',
-      title: t('twoPlayers.title'),
-      subtitle: t('twoPlayers.subtitle'),
-      description: t('twoPlayers.description'),
+      title: t('opponentHumanTitle'),
+      subtitle: t('opponentHumanSubtitle'),
+      description: t('opponentHumanDesc'),
       icon: 'people-outline',
       color: COLORS.oColor,
       emoji: '👥',
     },
     {
       id: 'online',
-      title: 'Online',
-      subtitle: 'Jogue via internet',
-      description: 'Convide um amigo e jogue de qualquer lugar',
+      title: t('opponentOnlineTitle'),
+      subtitle: t('opponentOnlineSubtitle'),
+      description: t('opponentOnlineDesc'),
       icon: 'globe-outline',
       color: COLORS.success,
       emoji: '🌍',
+    },
+    {
+      id: 'private' as OpponentType,
+      title: t('opponentPrivateTitle'),
+      subtitle: t('opponentPrivateSubtitle'),
+      description: t('opponentPrivateDesc'),
+      icon: 'key-outline',
+      color: COLORS.info,
+      emoji: '🔑',
+    },
+    {
+      id: 'ranked' as OpponentType,
+      title: t('ranked'),
+      subtitle: t('opponentRankedSubtitle'),
+      description: t('opponentRankedDesc'),
+      icon: 'trophy-outline',
+      color: COLORS.warning,
+      emoji: '🏆',
     },
   ];
 
@@ -82,6 +103,19 @@ const OpponentScreen: React.FC = () => {
     navigation.goBack();
   };
 
+  const getRankedDifficulty = async (): Promise<Difficulty> => {
+    const profile = await rankedService.getProfile();
+    const league = getLeagueForPoints(profile.points);
+    switch (league.tier) {
+      case 'bronze': return 'mediano';
+      case 'silver': return 'expert';
+      case 'gold': return 'expert';
+      case 'diamond': return 'challenger';
+      case 'master': return 'challenger';
+      default: return 'mediano';
+    }
+  };
+
   const handleOpponentSelect = async (opponent: OpponentType) => {
     await triggerHaptics('medium');
     await playSound('button');
@@ -89,14 +123,15 @@ const OpponentScreen: React.FC = () => {
     // Reset score when changing opponent
     await resetStats();
 
-    if (opponent === 'ai') {
-      // Navigate to difficulty selection screen
+    if ((opponent as string) === 'ranked') {
+      (navigation as any).navigate('Matchmaking', { mode });
+    } else if (opponent === 'ai') {
       navigation.navigate('Difficulty', { mode });
     } else if (opponent === 'online') {
-      // Navigate to online lobby
+      (navigation as any).navigate('PublicLobby', { mode });
+    } else if ((opponent as string) === 'private') {
       navigation.navigate('OnlineLobby' as any, { mode });
     } else {
-      // Navigate directly to game
       navigation.navigate('Game', { mode, opponent });
     }
   };

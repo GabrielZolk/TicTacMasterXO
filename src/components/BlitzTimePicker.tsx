@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Modal } from 'react-native';
 import Animated, { FadeIn, SlideInUp } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, BORDER_RADIUS, createTextStyle, SHADOWS } from '../utils/theme';
+import { useI18n } from '../i18n/useI18n';
 
 interface BlitzTimePickerProps {
     visible: boolean;
@@ -12,12 +13,12 @@ interface BlitzTimePickerProps {
 }
 
 const TIME_OPTIONS = [
-    { value: 1, label: '1s', description: 'Insano!' },
-    { value: 2, label: '2s', description: 'Muito rápido' },
-    { value: 3, label: '3s', description: 'Rápido' },
-    { value: 4, label: '4s', description: 'Moderado' },
-    { value: 5, label: '5s', description: 'Relaxado' },
-];
+    { value: 1, label: '1s', descriptionKey: 'blitzInsane' },
+    { value: 2, label: '2s', descriptionKey: 'blitzVeryFast' },
+    { value: 3, label: '3s', descriptionKey: 'blitzFast' },
+    { value: 4, label: '4s', descriptionKey: 'blitzModerate' },
+    { value: 5, label: '5s', descriptionKey: 'blitzRelaxed' },
+] as const;
 
 const BlitzTimePicker: React.FC<BlitzTimePickerProps> = ({
     visible,
@@ -25,6 +26,7 @@ const BlitzTimePicker: React.FC<BlitzTimePickerProps> = ({
     onSelectTime,
     onClose,
 }) => {
+    const { t } = useI18n();
     const [selectedTime, setSelectedTime] = useState(currentTime);
 
     const handleConfirm = () => {
@@ -75,7 +77,7 @@ const BlitzTimePicker: React.FC<BlitzTimePickerProps> = ({
                                     styles.optionDescription,
                                     selectedTime === option.value && styles.optionDescriptionSelected,
                                 ]}>
-                                    {option.description}
+                                    {t(option.descriptionKey)}
                                 </Text>
                                 {selectedTime === option.value && (
                                     <Ionicons
@@ -95,7 +97,7 @@ const BlitzTimePicker: React.FC<BlitzTimePickerProps> = ({
                             onPress={onClose}
                             activeOpacity={0.7}
                         >
-                            <Text style={styles.cancelButtonText}>Cancelar</Text>
+                            <Text style={styles.cancelButtonText}>{t('cancel')}</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity
@@ -104,7 +106,7 @@ const BlitzTimePicker: React.FC<BlitzTimePickerProps> = ({
                             activeOpacity={0.7}
                         >
                             <Ionicons name="play" size={18} color={COLORS.white} />
-                            <Text style={styles.confirmButtonText}>Começar!</Text>
+                            <Text style={styles.confirmButtonText}>{t('startAction')}</Text>
                         </TouchableOpacity>
                     </View>
                 </Animated.View>

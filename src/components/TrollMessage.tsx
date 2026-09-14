@@ -10,6 +10,7 @@ import Animated, {
 import { Ionicons } from '@expo/vector-icons';
 
 import { COLORS, SPACING, BORDER_RADIUS, createTextStyle, SHADOWS } from '../utils/theme';
+import { useI18n } from '../i18n/useI18n';
 
 interface TrollMessageProps {
   message: string;
@@ -17,6 +18,8 @@ interface TrollMessageProps {
 }
 
 const TrollMessage: React.FC<TrollMessageProps> = ({ message, onDismiss }) => {
+  // `message` is a content id emitted by the AI (troll.taunt.3), not a literal.
+  const { tc } = useI18n();
   const opacity = useSharedValue(0);
   const translateY = useSharedValue(-50);
   const scale = useSharedValue(0.8);
@@ -53,7 +56,7 @@ const TrollMessage: React.FC<TrollMessageProps> = ({ message, onDismiss }) => {
           <Text style={styles.aiLabel}>Troll AI</Text>
         </View>
         
-        <Text style={styles.messageText}>{message}</Text>
+        <Text style={styles.messageText}>{tc(message, message)}</Text>
         
         <TouchableOpacity 
           onPress={handleDismiss} 

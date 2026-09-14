@@ -96,27 +96,23 @@ export const createBigBoard = (size: 4 | 5): Cell[][] => {
 
 
 
-// Blind Mode Logic
-export const hideOldMoves = (board: Cell[][], moves: GameMove[], hideDelay: number = 3000): Cell[][] => {
-  if (moves.length <= 2) return board; // Always show last 2 moves
-  
+// Blind Mode Logic — hides all moves except the last one from each player
+export const hideOldMoves = (board: Cell[][], moves: GameMove[]): Cell[][] => {
+  if (moves.length <= 2) return board;
+
   const newBoard = board.map(row => [...row]);
-  const currentTime = Date.now();
-  
-  // Hide moves older than hideDelay, except the last move from each player
+
   const playerXLastMove = moves.filter(m => m.player === 'X').pop();
   const playerOLastMove = moves.filter(m => m.player === 'O').pop();
-  
+
   for (const move of moves) {
     if (move !== playerXLastMove && move !== playerOLastMove) {
-      // In a real implementation, you'd track move timestamps
-      // For now, we'll hide moves based on move number
       if (moves.length - move.moveNumber > 2) {
         newBoard[move.row][move.col] = null;
       }
     }
   }
-  
+
   return newBoard;
 };
 

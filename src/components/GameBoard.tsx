@@ -7,6 +7,7 @@ import Animated, {
   withSequence,
   withDelay,
 } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { Cell, WinningLine, GameMove, GravityFallAnimation } from '../types/game';
 import GameCell from './GameCell';
@@ -17,7 +18,10 @@ import {
   BORDER_RADIUS,
   GAME_DIMENSIONS,
   SHADOWS,
+  getStorePreviewGradient,
 } from '../utils/theme';
+import { useTheme } from '../hooks/useTheme';
+import { useEquippedBoardSkin } from '../hooks/useEquippedItems';
 
 const { width } = Dimensions.get('window');
 
@@ -28,6 +32,12 @@ interface GameBoardProps {
   moves: GameMove[];
   isInfinityMode?: boolean;
   disabled?: boolean;
+  // Infinity mode: the piece that will be removed on the next placement
+  nextToRemove?: { row: number; col: number } | null;
+  // Mad mode: cell temporarily blocked by a freeze mutation
+  frozenCell?: { row: number; col: number } | null;
+  // Gobble mode: size of the top piece in each cell (drives piece scale)
+  cellSizes?: (1 | 2 | 3 | null)[][] | null;
   // Gravity mode props
   pendingFall?: GravityFallAnimation;
   onGravityFallComplete?: () => void;
@@ -40,9 +50,14 @@ const GameBoard: React.FC<GameBoardProps> = ({
   moves,
   isInfinityMode = false,
   disabled = false,
+  nextToRemove,
+  frozenCell,
+  cellSizes,
   pendingFall,
   onGravityFallComplete,
 }) => {
+  const { colors, theme } = useTheme();
+  const boardSkin = useEquippedBoardSkin();
   const boardScale = useSharedValue(1);
   const borderGlow = useSharedValue(0);
 
@@ -85,9 +100,37 @@ const GameBoard: React.FC<GameBoardProps> = ({
     };
   };
 
+  // When skin is "Tema" (default), use the SAME bright gradient that the
+  // store preview uses (COLORS.{theme}Gradient — not the dark "background"
+  // variant returned by getThemeColors().gradient).
+  const isThemeSkin = boardSkin.id === 'skin_default';
+  const boardBgColor = isThemeSkin ? 'transparent' : boardSkin.boardBackground;
+  const themeGradient = isThemeSkin ? getStorePreviewGradient(theme) : undefined;
+
   return (
     <View style={styles.container}>
-      <Animated.View style={[styles.board, boardAnimatedStyle]}>
+      <Animated.View style={[
+        styles.board,
+        {
+          backgroundColor: boardBgColor,
+          overflow: 'hidden',
+        },
+        boardSkin.glowColor ? {
+          shadowColor: boardSkin.glowColor,
+          shadowOpacity: 0.5,
+          shadowRadius: 12,
+          elevation: 10,
+        } : null,
+        boardAnimatedStyle,
+      ]}>
+        {/* Theme gradient background — matches the store preview EXACTLY
+            (top→bottom direction, same gradient array). */}
+        {isThemeSkin && themeGradient && themeGradient.length > 1 && (
+          <LinearGradient
+            colors={themeGradient as any}
+            style={StyleSheet.absoluteFill}
+          />
+        )}
         {board.map((row, rowIndex) => (
           <View key={rowIndex} style={styles.row}>
             {row.map((cell, colIndex) => {
@@ -108,15 +151,31 @@ const GameBoard: React.FC<GameBoardProps> = ({
                   disabled={disabled}
                   winningLine={winningLine}
                   isHiddenForAnimation={isAnimatingCell}
+                  isNextToRemove={
+                    isInfinityMode &&
+                    !!nextToRemove &&
+                    nextToRemove.row === rowIndex &&
+                    nextToRemove.col === colIndex
+                  }
+                  isFrozen={
+                    !!frozenCell &&
+                    frozenCell.row === rowIndex &&
+                    frozenCell.col === colIndex
+                  }
+                  pieceSize={cellSizes ? cellSizes[rowIndex][colIndex] : null}
                 />
               );
             })}
           </View>
         ))}
 
-        {/* Gravity Falling Piece Animation */}
+        {/* Gravity Falling Piece Animation.
+            key forces a REMOUNT when a different fall starts — the sprite only
+            animates on mount, so a reused instance would never start fall B
+            and its stale completion would teleport the wrong piece. */}
         {pendingFall && pendingFall.isAnimating && onGravityFallComplete && (
           <View
+            key={`fall-${pendingFall.col}-${pendingFall.startRow}-${moves.length}`}
             style={[
               styles.fallingPieceContainer,
               getCellPosition(pendingFall.startRow, pendingFall.col),

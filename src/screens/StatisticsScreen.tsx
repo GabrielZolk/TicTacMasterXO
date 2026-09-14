@@ -1,9 +1,10 @@
-import React from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
+
   StatusBar,
   TouchableOpacity,
   ScrollView,
@@ -15,6 +16,8 @@ import Animated, { FadeInUp, FadeInRight } from 'react-native-reanimated';
 
 import { useGame } from '../contexts/GameContext';
 import { useI18n } from '../i18n/useI18n';
+import { rankedService } from '../services/rankedService';
+import { RankedProfile } from '../types/ranked';
 import { useTheme } from '../hooks/useTheme';
 import AppHeader from '../components/AppHeader';
 import { 
@@ -28,9 +31,27 @@ import {
 
 const StatisticsScreen: React.FC = () => {
   const navigation = useNavigation();
-  const { gameStats, playSound, triggerHaptics } = useGame();
+  const { playSound, triggerHaptics } = useGame();
   const { t } = useI18n();
   const { colors } = useTheme();
+
+  /*
+   * This screen used to read gameStats from GameContext, which only lives for
+   * the current app run: after two wins and a restart it said "no games played"
+   * while Ranked — same matches, persisted — still showed them. GameContext
+   * calls rankedService.recordGame() after every match, for every mode and
+   * opponent, so this is the same history without the reset.
+   */
+  const [ranked, setRanked] = useState<RankedProfile | null>(null);
+  useEffect(() => {
+    rankedService.getProfile().then(setRanked);
+    return rankedService.subscribe(() => { rankedService.getProfile().then(setRanked); });
+  }, []);
+
+  const totalGames = ranked?.gamesPlayed ?? 0;
+  const myWins = ranked?.wins ?? 0;
+  const myLosses = ranked?.losses ?? 0;
+  const myDraws = ranked?.draws ?? 0;
 
   const handleGoBack = async () => {
     await triggerHaptics('light');
@@ -43,26 +64,28 @@ const StatisticsScreen: React.FC = () => {
     return Math.round((wins / totalGames) * 100);
   };
 
-  const playerXWinRate = calculateWinRate(gameStats.playerX.wins, gameStats.totalGames);
-  const playerOWinRate = calculateWinRate(gameStats.playerO.wins, gameStats.totalGames);
-  const drawRate = calculateWinRate(gameStats.playerX.draws, gameStats.totalGames);
+  const playerXWinRate = calculateWinRate(myWins, totalGames);
+  // The opponent's record is the exact mirror of the player's — the persisted
+  // profile stores one side, and a match has exactly two.
+  const playerOWinRate = calculateWinRate(myLosses, totalGames);
+  const drawRate = calculateWinRate(myDraws, totalGames);
 
   const statisticsData = [
     {
       title: t('totalGames'),
-      value: gameStats.totalGames.toString(),
+      value: totalGames.toString(),
       icon: 'game-controller-outline' as keyof typeof Ionicons.glyphMap,
       color: COLORS.gold,
     },
     {
       title: t('currentStreak'),
-      value: gameStats.currentStreak.toString(),
+      value: (ranked?.winStreak ?? 0).toString(),
       icon: 'flame-outline' as keyof typeof Ionicons.glyphMap,
       color: COLORS.xColor,
     },
     {
       title: t('bestStreak'),
-      value: gameStats.bestStreak.toString(),
+      value: (ranked?.bestStreak ?? 0).toString(),
       icon: 'trophy-outline' as keyof typeof Ionicons.glyphMap,
       color: COLORS.gold,
     },
@@ -71,16 +94,16 @@ const StatisticsScreen: React.FC = () => {
   const playerStats = [
     {
       player: 'X' as const,
-      wins: gameStats.playerX.wins,
-      losses: gameStats.playerX.losses,
-      draws: gameStats.playerX.draws,
+      wins: myWins,
+      losses: myLosses,
+      draws: myDraws,
       winRate: playerXWinRate,
     },
     {
       player: 'O' as const,
-      wins: gameStats.playerO.wins,
-      losses: gameStats.playerO.losses,
-      draws: gameStats.playerO.draws,
+      wins: myLosses,
+      losses: myWins,
+      draws: myDraws,
       winRate: playerOWinRate,
     },
   ];
@@ -99,22 +122,22 @@ const StatisticsScreen: React.FC = () => {
         />
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {gameStats.totalGames === 0 ? (
+          {totalGames === 0 ? (
             /* No Games Played Yet */
             <Animated.View entering={FadeInUp.delay(200).duration(600)} style={styles.emptyState}>
               <View style={styles.emptyIcon}>
                 <Ionicons name="stats-chart-outline" size={64} color={COLORS.gray} />
               </View>
-              <Text style={styles.emptyTitle}>No Games Played Yet</Text>
+              <Text style={styles.emptyTitle}>{t('noGamesYet')}</Text>
               <Text style={styles.emptySubtitle}>
-                Start playing to see your statistics here!
+                {t('startPlaying')}
               </Text>
             </Animated.View>
           ) : (
             <>
               {/* Overall Statistics */}
               <Animated.View entering={FadeInUp.delay(200).duration(600)} style={styles.overallSection}>
-                <Text style={styles.sectionTitle}>Overall Statistics</Text>
+                <Text style={styles.sectionTitle}>{t('overallStats')}</Text>
                 
                 <View style={styles.statsGrid}>
                   {statisticsData.map((stat, index) => (
@@ -135,7 +158,7 @@ const StatisticsScreen: React.FC = () => {
 
               {/* Player Statistics */}
               <Animated.View entering={FadeInUp.delay(600).duration(600)} style={styles.playersSection}>
-                <Text style={styles.sectionTitle}>Player Statistics</Text>
+                <Text style={styles.sectionTitle}>{t('playerStats')}</Text>
                 
                 <View style={styles.playersContainer}>
                   {playerStats.map((player, index) => (
@@ -150,24 +173,24 @@ const StatisticsScreen: React.FC = () => {
                             {player.player}
                           </Text>
                         </View>
-                        <Text style={styles.playerTitle}>Player {player.player}</Text>
+                        <Text style={styles.playerTitle}>{t('playerLabel')} {player.player}</Text>
                         <Text style={[styles.winRate, { color: getPlayerColor(player.player) }]}>
-                          {player.winRate}% Win Rate
+                          {player.winRate}{t('winRate')}
                         </Text>
                       </View>
 
                       <View style={styles.playerStats}>
                         <View style={styles.statItem}>
                           <Text style={styles.statNumber}>{player.wins}</Text>
-                          <Text style={styles.statLabel}>Wins</Text>
+                          <Text style={styles.statLabel}>{t('wins')}</Text>
                         </View>
                         <View style={styles.statItem}>
                           <Text style={styles.statNumber}>{player.losses}</Text>
-                          <Text style={styles.statLabel}>Losses</Text>
+                          <Text style={styles.statLabel}>{t('losses')}</Text>
                         </View>
                         <View style={styles.statItem}>
                           <Text style={styles.statNumber}>{player.draws}</Text>
-                          <Text style={styles.statLabel}>Draws</Text>
+                          <Text style={styles.statLabel}>{t('draws')}</Text>
                         </View>
                       </View>
 

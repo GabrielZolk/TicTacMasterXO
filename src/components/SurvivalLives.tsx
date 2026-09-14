@@ -10,6 +10,7 @@ import Animated, {
   FadeOut,
 } from 'react-native-reanimated';
 
+import { useI18n } from '../i18n/useI18n';
 import { 
   COLORS, 
   SPACING, 
@@ -31,6 +32,7 @@ const SurvivalLives: React.FC<SurvivalLivesProps> = ({
   consecutiveWins,
   onLifeLost,
 }) => {
+  const { t } = useI18n();
   const shakeAnimation = useSharedValue(0);
   const scaleAnimation = useSharedValue(1);
 
@@ -95,11 +97,11 @@ const SurvivalLives: React.FC<SurvivalLivesProps> = ({
   };
 
   const getStatusMessage = () => {
-    if (lives <= 1) return '⚠️ Última chance!';
-    if (lives === 2) return '⚡ Cuidado!';
-    if (consecutiveWins >= 5) return '🔥 Em chamas!';
-    if (consecutiveWins >= 3) return '✨ Sequência!';
-    return '💪 Sobreviva!';
+    if (lives <= 1) return t('survivalLastChance');
+    if (lives === 2) return t('survivalCareful');
+    if (consecutiveWins >= 5) return t('survivalOnFire');
+    if (consecutiveWins >= 3) return t('survivalStreak');
+    return t('survivalSurvive');
   };
 
   const getStatusColor = () => {
@@ -128,7 +130,7 @@ const SurvivalLives: React.FC<SurvivalLivesProps> = ({
       <View style={styles.statsContainer}>
         <View style={styles.statItem}>
           <Text style={styles.statValue}>{consecutiveWins}</Text>
-          <Text style={styles.statLabel}>Vitórias Seguidas</Text>
+          <Text style={styles.statLabel}>{t('consecutiveWins')}</Text>
         </View>
         
         <View style={styles.divider} />
@@ -137,7 +139,7 @@ const SurvivalLives: React.FC<SurvivalLivesProps> = ({
           <Text style={[styles.statValue, { color: getLivesColor() }]}>
             {lives}/{maxLives}
           </Text>
-          <Text style={styles.statLabel}>Vidas Restantes</Text>
+          <Text style={styles.statLabel}>{t('livesLeft')}</Text>
         </View>
       </View>
 
