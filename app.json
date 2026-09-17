@@ -26,13 +26,10 @@
     },
     "androidStatusBar": {
       "translucent": true,
-      "backgroundColor": "#00000000",
       "barStyle": "light-content"
     },
     "androidNavigationBar": {
-      "visible": "sticky-immersive",
-      "barStyle": "light-content",
-      "backgroundColor": "#0A0A0A"
+      "barStyle": "light-content"
     },
     "android": {
       "adaptiveIcon": {
