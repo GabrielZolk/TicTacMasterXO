@@ -875,12 +875,24 @@ class IAPService {
         if (code === 'E_USER_CANCELLED' || rawMsg.includes('cancel')) {
             return '';
         }
-        // Product not configured in Play Store / App Store Connect
+        // Our own wiring, not the store. "missing purchase request configuration"
+        // is what react-native-iap throws when the call itself is malformed, and a
+        // bare 'sku' match catches every "you must provide skus" variant. Both used
+        // to be reported as "product unavailable", which sent us hunting through the
+        // Play Console for products that were active the whole time. Keep them
+        // separate and loud.
         if (rawMsg.includes('missing purchase request configuration') ||
-            rawMsg.includes('item unavailable') ||
+            rawMsg.includes('must provide') ||
+            rawMsg.includes('invalid request')) {
+            console.error('IAP call is malformed — this is an app bug, not the store:', error?.message);
+            return 'iapErrGeneric';
+        }
+        // Product genuinely not configured in Play Store / App Store Connect
+        if (rawMsg.includes('item unavailable') ||
             rawMsg.includes('product not found') ||
             rawMsg.includes('not configured') ||
-            rawMsg.includes('sku')) {
+            rawMsg.includes('sku not found') ||
+            rawMsg.includes('unknown sku')) {
             return 'iapErrProductUnavailable';
         }
         // Billing/payment issue
@@ -912,9 +924,19 @@ class IAPService {
 
         try {
             if (typeof RNIap.requestPurchase === 'function') {
+                // react-native-iap 14 takes the request nested per platform plus an
+                // explicit `type`. The flat `{ sku, skus }` below is the v12/v13
+                // shape: the subscription path above was already migrated, this one
+                // was not, so every star and battle-pass purchase threw
+                // "missing purchase request configuration" before Play was ever
+                // reached — and the mapper turned that into "this purchase is not
+                // available yet", which reads exactly like a Console problem.
                 await RNIap.requestPurchase({
-                    sku: productId,
-                    skus: [productId],
+                    request: {
+                        google: { skus: [productId] },
+                        apple: { sku: productId },
+                    },
+                    type: 'in-app',
                 });
             } else {
                 throw new Error('Nenhuma API de compra disponível.');
