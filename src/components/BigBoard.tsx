@@ -20,7 +20,12 @@ import {
 import { useTheme } from '../hooks/useTheme';
 import { useEquippedBoardSkin } from '../hooks/useEquippedItems';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
+
+// Same reasoning as GAME_DIMENSIONS in theme.ts: this board is square too, so
+// it has to be bounded by the short edge or a landscape launch runs it off the
+// bottom. In portrait the height term is the larger one and nothing changes.
+const boardEdge = Math.min(width, height * 0.72);
 
 interface BigBoardProps {
   board: Cell[][];
@@ -76,7 +81,7 @@ const BigBoard: React.FC<BigBoardProps> = ({
 
   // Calculate cell size based on board size
   const boardSize = board.length;
-  const availableWidth = width - SPACING.lg * 4;
+  const availableWidth = boardEdge - SPACING.lg * 4;
   const cellSize = (availableWidth - SPACING.xs * (boardSize - 1)) / boardSize;
 
   const isThemeSkin = boardSkin.id === 'skin_default';

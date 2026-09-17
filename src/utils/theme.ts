@@ -238,10 +238,28 @@ export const DIMENSIONS = {
 };
 
 // Game-specific dimensions
+/**
+ * The board is square, so it has to be bounded by the SHORT edge of the
+ * viewport — not by the width.
+ *
+ * Sizing off `width` alone only ever worked because the app was locked to
+ * portrait. From Android 16 the system ignores that lock on displays of 600dp
+ * and up (tablets, foldables, Chromebooks, Android XR — all inside our
+ * distribution), so the game can be launched straight into landscape. There
+ * `width` is the LONG edge: every cell came out at its maximum and the board
+ * ran off the bottom of the screen.
+ *
+ * `height * 0.72` reserves the ~28% of vertical space the header, the score row
+ * and the controls occupy. In portrait that term is far larger than the width,
+ * so `Math.min` picks the width and the phone layout is unchanged to the pixel.
+ * In landscape it wins, and the board shrinks to fit instead of overflowing.
+ */
+const boardEdge = Math.min(width, height * 0.72);
+
 export const GAME_DIMENSIONS = {
-  boardSize: Math.min(width * 0.9, 350),
-  cellSize: Math.min(width * 0.25, 100),
-  pieceSize: Math.min(width * 0.18, 70),
+  boardSize: Math.min(boardEdge * 0.9, 350),
+  cellSize: Math.min(boardEdge * 0.25, 100),
+  pieceSize: Math.min(boardEdge * 0.18, 70),
 };
 
 export const ANIMATIONS = {
