@@ -97,6 +97,14 @@ class ProfileService {
         const title = TITLES.find(t => t.id === itemId);
         const price = avatar?.price || border?.price || title?.price || 0;
 
+        // A title that advertises a requirement ("Win 100 games") is earned, never
+        // bought. It carries price 0 so that it can be granted for free once the
+        // requirement is met — but that also meant the purchase path below sailed
+        // straight past both the "can you afford it" check and the confirmation,
+        // pushed it into `ownedItems` and handed it over. Every locked title was
+        // one tap away from anyone. Only checkTitleUnlocks may grant these.
+        if (title?.requirement) return false;
+
         if (price > 0) {
             const spent = await storeService.spendCurrency('stars', price, itemId, `Comprou perfil: ${itemId}`);
             if (!spent) return false;

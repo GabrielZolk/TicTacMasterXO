@@ -107,6 +107,17 @@ const ProfileScreen: React.FC = () => {
             const item = [...AVATARS, ...BORDERS, ...TITLES].find(i => i.id === itemId);
             const price = (item as any)?.price || 0;
 
+            // Locked-by-requirement titles are not for sale at any price. Say what
+            // unlocks it instead of failing with a generic "could not purchase".
+            const requirement = (item as any)?.requirement;
+            if (requirement) {
+                Alert.alert(
+                    t('titleLockedTitle'),
+                    t('titleLockedBody').replace('{requirement}', tc(`title.${itemId}.req`, requirement)),
+                );
+                return;
+            }
+
             if (price > 0 && stars < price) {
                 Alert.alert(t('insufficientStars'), t('needStars', { price: String(price) }));
                 return;
