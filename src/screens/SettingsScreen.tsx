@@ -19,6 +19,7 @@ import Animated, { FadeInUp } from 'react-native-reanimated';
 import { useGame } from '../contexts/GameContext';
 import { useTheme } from '../hooks/useTheme';
 import { useI18n } from '../i18n/useI18n';
+import { REFERRAL_REWARD } from '../services/referralService';
 import { Language } from '../i18n/translations';
 import AppHeader from '../components/AppHeader';
 import { storeService } from '../services/storeService';
@@ -172,7 +173,7 @@ const SettingsScreen: React.FC = () => {
     {
       id: 'referral',
       title: t('inviteFriendsTitle'),
-      subtitle: t('referralSubtitle'),
+      subtitle: t('referralSubtitle').replace('{stars}', String(REFERRAL_REWARD)),
       icon: 'gift-outline',
       type: 'button' as const,
       onPress: () => {

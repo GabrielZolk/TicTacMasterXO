@@ -5,7 +5,7 @@ import { getAuth } from 'firebase/auth';
 import { storeService } from './storeService';
 
 const STORAGE_KEY = '@tictacmasterxo:referral';
-export const REFERRAL_REWARD = 100; // stars for both inviter and invitee
+export const REFERRAL_REWARD = 900; // stars for both inviter and invitee
 
 interface ReferralState {
     myCode: string;

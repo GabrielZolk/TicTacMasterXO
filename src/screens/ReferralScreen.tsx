@@ -48,7 +48,7 @@ const ReferralScreen: React.FC = () => {
         // Check if anyone used our code
         const newInvites = await referralService.checkInvites();
         if (newInvites > 0) {
-            Alert.alert(t('newInvitesTitle'), t('newInvitesBody').replace('{count}', String(newInvites)).replace('{stars}', String(newInvites * 100)));
+            Alert.alert(t('newInvitesTitle'), t('newInvitesBody').replace('{count}', String(newInvites)).replace('{stars}', String(newInvites * REFERRAL_REWARD)));
             setStats(referralService.getStats());
         }
     };
@@ -134,7 +134,7 @@ const ReferralScreen: React.FC = () => {
                     {/* Reward info */}
                     <Animated.View entering={FadeInUp.delay(300).duration(400)} style={styles.rewardInfo}>
                         <Ionicons name="gift" size={24} color={COLORS.gold} />
-                        <Text style={styles.rewardText}>{t('referralRewardInfo')}</Text>
+                        <Text style={styles.rewardText}>{t('referralRewardInfo').replace('{stars}', String(REFERRAL_REWARD))}</Text>
                     </Animated.View>
 
                     {/* Enter code section */}
