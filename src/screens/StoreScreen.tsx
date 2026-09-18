@@ -230,16 +230,29 @@ const StoreScreen: React.FC = () => {
                 // tracked in a ref so unmounting mid-purchase detaches it —
                 // otherwise it leaked and set state on an unmounted screen.
                 purchaseUnsubRef.current?.();
+
+                const finish = () => {
+                    purchaseUnsubRef.current?.();
+                    purchaseUnsubRef.current = null;
+                    if (!mountedRef.current) return;
+                    setBuyingStars(null);
+                    loadStoreData(); // Refresh wallet
+                };
+
                 const unsubscribe = iapService.subscribe((state) => {
-                    if (!state.isProcessing) {
-                        unsubscribe();
-                        purchaseUnsubRef.current = null;
-                        if (!mountedRef.current) return;
-                        setBuyingStars(null);
-                        loadStoreData(); // Refresh wallet
-                    }
+                    if (!state.isProcessing) finish();
                 });
                 purchaseUnsubRef.current = unsubscribe;
+
+                // Subscribing is not enough: `requestConsumable` resolves as soon
+                // as the Play dialog is handed over, and a card that declines
+                // instantly (the "always denied" test instrument) fires the error
+                // listener BEFORE this subscription exists. That notification went
+                // to nobody, so the card kept spinning "..." forever — disabled,
+                // with no way back except leaving the screen. A card that gets
+                // APPROVED takes long enough that the race is never lost, which is
+                // why this only ever showed up on a refusal.
+                if (!iapService.getState().isProcessing) finish();
             } else {
                 setBuyingStars(null);
                 const state = iapService.getState();
