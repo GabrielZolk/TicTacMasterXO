@@ -22,9 +22,15 @@ import {
   createTextStyle,
 } from '../utils/theme';
 import { useTheme } from '../hooks/useTheme';
-import { useEquippedSymbols, useEquippedBoardSkin } from '../hooks/useEquippedItems';
+import {
+  useEquippedSymbols,
+  useEquippedBoardSkin,
+  SymbolStyle,
+} from '../hooks/useEquippedItems';
 import MysticCellEffect from './MysticCellEffect';
 import CopaNickCellEffect from './CopaNickCellEffect';
+import AnimatedPiece from './AnimatedPiece';
+import SymbolSweep, { hasSymbolSweep } from './SymbolSweep';
 
 interface GameCellProps {
   value: Cell;
@@ -210,10 +216,15 @@ const GameCell: React.FC<GameCellProps> = ({
   };
 
   // Style-aware colors for custom symbol packs.
-  // When the "Tema" board skin is equipped (skin_default), force the pieces to
-  // follow the theme — so picking "Tema" really means "tudo segue o tema",
-  // even if the player still has the default symbol pack equipped.
-  const symbolStyle = boardSkin.id === 'skin_default' ? 'theme' : equippedSymbols.style;
+  // "Tema" (skin_default) means "everything follows the theme" — but only for a
+  // pack that brings no look of its own. The old rule forced 'theme' onto EVERY
+  // pack whenever the default skin was equipped, and the default skin is what
+  // every player starts with: Fogo, Gelo, Neon, Ouro and Matrix were sold for up
+  // to 400 stars and then drew exactly like the free pack. A pack that declares a
+  // style keeps it; only the style-less ones follow the theme.
+  const packHasOwnStyle = equippedSymbols.style !== 'default';
+  const symbolStyle: SymbolStyle =
+    boardSkin.id === 'skin_default' && !packHasOwnStyle ? 'theme' : equippedSymbols.style;
 
   const getStyledPieceColor = (player: Cell): string => {
     if (isWinning) return COLORS.gold;
@@ -268,14 +279,24 @@ const GameCell: React.FC<GameCellProps> = ({
       activeOpacity={0.8}
       style={[styles.cell, cellAnimatedStyle]}
     >
+      {/* Light sweep of the cell (Matrix, Ouro). Deliberately OUTSIDE the piece
+          envelope: the sweep belongs to the cell, so it must not rotate and
+          scale along with the glyph when the piece lands. */}
+      {value && !isHiddenForAnimation && hasSymbolSweep(symbolStyle) && (
+        <SymbolSweep symbolStyle={symbolStyle} borderRadius={boardSkin.cellBorderRadius} />
+      )}
+
       {/* Game piece - hidden during gravity fall animation */}
       {value && !isHiddenForAnimation && (
         <Animated.View style={pieceAnimatedStyle}>
-          <Text
-            style={[
+          <AnimatedPiece
+            symbol={getPieceSymbol(value)}
+            color={getStyledPieceColor(value)}
+            symbolStyle={symbolStyle}
+            isWinning={isWinning}
+            textStyle={[
               styles.piece,
               {
-                color: getStyledPieceColor(value),
                 textShadowColor: getStyledShadow(value).color,
                 textShadowRadius: getStyledShadow(value).radius,
                 fontWeight: symbolStyle === 'gold' ? '900' : 'bold',
@@ -285,9 +306,7 @@ const GameCell: React.FC<GameCellProps> = ({
               // see at a glance what can still be swallowed.
               pieceSize ? { fontSize: GAME_DIMENSIONS.pieceSize * (0.45 + pieceSize * 0.17) } : null,
             ]}
-          >
-            {getPieceSymbol(value)}
-          </Text>
+          />
         </Animated.View>
       )}
 
