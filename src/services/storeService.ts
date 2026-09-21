@@ -19,12 +19,13 @@ const INITIAL_STORE_DATA: StoreData = {
         lastUpdated: Date.now(),
     },
     inventory: {
-        ownedItems: ['theme_dark', 'theme_light', 'symbols_default', 'effect_none', 'skin_default', 'line_default'], // Itens gratuitos iniciais
+        ownedItems: ['theme_dark', 'theme_light', 'symbols_default', 'effect_none', 'skin_default', 'line_default', 'draw_default'], // Itens gratuitos iniciais
         equippedTheme: 'theme_dark',
         equippedSymbols: 'symbols_default',
         equippedEffect: 'effect_none',
         equippedBoardSkin: 'skin_default',
         equippedWinLine: 'line_default',
+        equippedDrawMark: 'draw_default',
     },
     transactions: [],
     lastDailyReward: 0,
@@ -92,6 +93,12 @@ class StoreService {
                     }
                     if (!this.storeData.inventory.ownedItems.includes('line_default')) {
                         this.storeData.inventory.ownedItems.push('line_default');
+                    }
+                    if (!this.storeData.inventory.equippedDrawMark) {
+                        this.storeData.inventory.equippedDrawMark = 'draw_default';
+                    }
+                    if (!this.storeData.inventory.ownedItems.includes('draw_default')) {
+                        this.storeData.inventory.ownedItems.push('draw_default');
                     }
                     await this.save();
                 }
@@ -303,7 +310,7 @@ class StoreService {
         }
     }
 
-    async equipItem(itemId: string, itemType: 'theme' | 'symbol' | 'effect' | 'avatar' | 'board_skin' | 'win_line'): Promise<boolean> {
+    async equipItem(itemId: string, itemType: 'theme' | 'symbol' | 'effect' | 'avatar' | 'board_skin' | 'win_line' | 'draw_mark'): Promise<boolean> {
         try {
             if (!this.storeData) {
                 await this.initialize();
@@ -333,6 +340,9 @@ class StoreService {
                     break;
                 case 'win_line':
                     this.storeData!.inventory.equippedWinLine = itemId;
+                    break;
+                case 'draw_mark':
+                    this.storeData!.inventory.equippedDrawMark = itemId;
                     break;
                 default:
                     // A tela chama isto com `item.type as any`. Sem este ramo, um

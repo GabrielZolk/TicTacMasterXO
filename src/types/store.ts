@@ -14,7 +14,8 @@ export type StoreItemType =
   // Alinhador entra na uniao de verdade, e nao por `as any` como emote e
   // board_skin fizeram: assim getItemsByType e o filtro da loja funcionam
   // sozinhos, sem um ramo especial para cada categoria nova.
-  | 'win_line';
+  | 'win_line'
+  | 'draw_mark';
 
 // Raridade dos itens
 export type ItemRarity = 'common' | 'rare' | 'epic' | 'legendary';
@@ -124,6 +125,7 @@ export interface PlayerInventory {
   equippedAvatar?: string;
   equippedBoardSkin?: string;
   equippedWinLine?: string;
+  equippedDrawMark?: string;
 }
 
 // Interface para dados da loja

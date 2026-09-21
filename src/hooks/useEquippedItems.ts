@@ -4,6 +4,7 @@ import { getItemById } from '../data/storeItems';
 import { SymbolStoreItem, EffectStoreItem } from '../types/store';
 import { BOARD_SKINS, BoardSkin } from '../types/boardSkins';
 import { WinLineDef, DEFAULT_WIN_LINE, getWinLineById } from '../data/winLines';
+import { DrawMarkDef, DEFAULT_DRAW_MARK, getDrawMarkById } from '../data/drawMarks';
 
 const DEFAULT_EFFECT: EffectStoreItem['content'] = {
     animationType: 'sparkles',
@@ -180,4 +181,36 @@ export const useEquippedWinLine = (): WinLineDef => {
     }, []);
 
     return winLine;
+};
+
+/**
+ * Marca de velha equipada. Mesmo caminho do alinhador.
+ */
+export const useEquippedDrawMark = (): DrawMarkDef => {
+    const [drawMark, setDrawMark] = useState<DrawMarkDef>(DEFAULT_DRAW_MARK);
+    const mountedRef = useRef(true);
+
+    useEffect(() => {
+        mountedRef.current = true;
+
+        const loadDrawMark = async () => {
+            try {
+                const inventory = await storeService.getInventory();
+                if (!mountedRef.current) return;
+                setDrawMark(getDrawMarkById(inventory.equippedDrawMark));
+            } catch (error) {
+                console.error('Error loading equipped draw mark:', error);
+            }
+        };
+
+        loadDrawMark();
+        const unsubscribe = storeService.subscribe(loadDrawMark);
+
+        return () => {
+            mountedRef.current = false;
+            unsubscribe();
+        };
+    }, []);
+
+    return drawMark;
 };

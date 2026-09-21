@@ -1308,6 +1308,7 @@ const GameScreen: React.FC = () => {
               disabled={!!gameState.winner || (gameState as any).isDraw || isAIThinking || (opponent === 'ai' && gameState.currentPlayer === 'O') || !!(gameState as GravityGameState).pendingFall?.isAnimating}
               pendingFall={(gameState as GravityGameState).pendingFall}
               onGravityFallComplete={completeGravityFall}
+              isDraw={(gameState as any).isDraw}
             />
           ) : gameMode === 'bigBoard' ? (
             <BigBoard
@@ -1315,6 +1316,7 @@ const GameScreen: React.FC = () => {
               onCellPress={handleCellPress}
               winningLine={winningLine}
               moves={gameState.moves}
+              isDraw={(gameState as any).isDraw}
               disabled={!!gameState.winner || (gameState as any).isDraw || isAIThinking || (opponent === 'ai' && gameState.currentPlayer === 'O')}
             />
           ) : gameMode === 'blind' ? (
@@ -1323,6 +1325,7 @@ const GameScreen: React.FC = () => {
               onCellPress={handleCellPress}
               winningLine={winningLine}
               disabled={!!gameState.winner || (gameState as any).isDraw || isAIThinking || (opponent === 'ai' && gameState.currentPlayer === 'O')}
+              isDraw={Boolean((gameState as any).isDraw)}
               gameEnded={Boolean(gameState.winner) || Boolean((gameState as any).isDraw)}
             />
           ) : (
@@ -1338,6 +1341,7 @@ const GameScreen: React.FC = () => {
                   ? (gameState as MadGameState).frozenCell
                   : null
               }
+              isDraw={(gameState as any).isDraw}
               cellSizes={gameMode === 'gobble' ? (gameState as GobbleGameState).cellSizes : null}
               disabled={!!gameState.winner || (gameState as any).isDraw || isAIThinking || (opponent === 'ai' && gameState.currentPlayer === 'O')}
             />

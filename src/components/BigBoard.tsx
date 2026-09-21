@@ -20,6 +20,7 @@ import {
 import { useTheme } from '../hooks/useTheme';
 import { useEquippedBoardSkin } from '../hooks/useEquippedItems';
 import WinLine from './WinLine';
+import DrawMark from './DrawMark';
 
 const { width, height } = Dimensions.get('window');
 
@@ -32,6 +33,7 @@ interface BigBoardProps {
   board: Cell[][];
   onCellPress: (row: number, col: number) => void;
   winningLine?: WinningLine | null;
+  isDraw?: boolean;
   moves: GameMove[];
   disabled?: boolean;
 }
@@ -40,6 +42,7 @@ const BigBoard: React.FC<BigBoardProps> = ({
   board,
   onCellPress,
   winningLine,
+  isDraw = false,
   moves,
   disabled = false,
 }) => {
@@ -136,6 +139,15 @@ const BigBoard: React.FC<BigBoardProps> = ({
         {winningLine && (
           <WinLine
             winningLine={winningLine}
+            cellSize={cellSize}
+            gap={SPACING.xs}
+            padding={SPACING.md}
+          />
+        )}
+
+        {isDraw && !winningLine && (
+          <DrawMark
+            boardCells={board.length}
             cellSize={cellSize}
             gap={SPACING.xs}
             padding={SPACING.md}

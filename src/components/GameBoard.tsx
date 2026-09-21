@@ -13,6 +13,7 @@ import { Cell, WinningLine, GameMove, GravityFallAnimation } from '../types/game
 import GameCell from './GameCell';
 import GravityFallingPiece from './GravityFallingPiece';
 import WinLine from './WinLine';
+import DrawMark from './DrawMark';
 import {
   COLORS,
   SPACING,
@@ -30,6 +31,8 @@ interface GameBoardProps {
   board: Cell[][];
   onCellPress: (row: number, col: number) => void;
   winningLine?: WinningLine | null;
+  /** Partida terminada empatada: desenha a marca de velha. */
+  isDraw?: boolean;
   moves: GameMove[];
   isInfinityMode?: boolean;
   disabled?: boolean;
@@ -48,6 +51,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
   board,
   onCellPress,
   winningLine,
+  isDraw = false,
   moves,
   isInfinityMode = false,
   disabled = false,
@@ -175,6 +179,15 @@ const GameBoard: React.FC<GameBoardProps> = ({
         {winningLine && (
           <WinLine
             winningLine={winningLine}
+            cellSize={GAME_DIMENSIONS.cellSize}
+            gap={cellGap}
+            padding={SPACING.lg}
+          />
+        )}
+
+        {isDraw && !winningLine && (
+          <DrawMark
+            boardCells={board.length}
             cellSize={GAME_DIMENSIONS.cellSize}
             gap={cellGap}
             padding={SPACING.lg}

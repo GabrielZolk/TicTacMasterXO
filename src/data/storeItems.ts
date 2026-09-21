@@ -915,6 +915,29 @@ export const WIN_LINE_STORE_ITEMS: StoreItem[] = WIN_LINES.map(line => {
     };
 });
 
+// ==================== MARCAS DE VELHA ====================
+
+import { DRAW_MARKS } from './drawMarks';
+
+export const DRAW_MARK_STORE_ITEMS: StoreItem[] = DRAW_MARKS.map(mark => {
+    const isDefault = mark.id === 'draw_default';
+    return {
+        id: mark.id,
+        type: 'draw_mark',
+        name: mark.name,
+        nameKey: `store.drawmarks.${mark.id}.name`,
+        description: mark.description,
+        descriptionKey: `store.drawmarks.${mark.id}.description`,
+        icon: mark.icon,
+        emoji: mark.icon,
+        price: { stars: mark.price },
+        rarity: mark.rarity,
+        isOwned: isDefault,
+        isEquipped: false,
+        previewGradient: ['#101018', mark.color, mark.accent],
+    };
+});
+
 // ==================== TODOS OS ITENS ====================
 
 export const ALL_STORE_ITEMS: StoreItem[] = [
@@ -924,6 +947,7 @@ export const ALL_STORE_ITEMS: StoreItem[] = [
     ...EMOTE_STORE_ITEMS,
     ...BOARD_SKIN_STORE_ITEMS,
     ...WIN_LINE_STORE_ITEMS,
+    ...DRAW_MARK_STORE_ITEMS,
 ];
 
 // ==================== HELPERS ====================

@@ -21,11 +21,13 @@ import {
   createTextStyle,
 } from '../utils/theme';
 import WinLine from './WinLine';
+import DrawMark from './DrawMark';
 
 interface BlindBoardProps {
   gameState: BlindGameState;
   onCellPress: (row: number, col: number) => void;
   winningLine?: WinningLine | null;
+  isDraw?: boolean;
   disabled?: boolean;
   gameEnded?: boolean;
 }
@@ -34,6 +36,7 @@ const BlindBoard: React.FC<BlindBoardProps> = ({
   gameState,
   onCellPress,
   winningLine,
+  isDraw = false,
   disabled = false,
   gameEnded = false,
 }) => {
@@ -132,6 +135,15 @@ const BlindBoard: React.FC<BlindBoardProps> = ({
         {winningLine && (
           <WinLine
             winningLine={winningLine}
+            cellSize={GAME_DIMENSIONS.cellSize}
+            gap={SPACING.xs}
+            padding={SPACING.md}
+          />
+        )}
+
+        {isDraw && !winningLine && (
+          <DrawMark
+            boardCells={gameState.board.length}
             cellSize={GAME_DIMENSIONS.cellSize}
             gap={SPACING.xs}
             padding={SPACING.md}

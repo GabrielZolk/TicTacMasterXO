@@ -32,7 +32,7 @@ import ThemePreview from '../components/ThemePreview';
 
 const { width } = Dimensions.get('window');
 
-type TabType = 'all' | 'theme' | 'symbol' | 'effect' | 'emote' | 'boost' | 'board_skin' | 'win_line';
+type TabType = 'all' | 'theme' | 'symbol' | 'effect' | 'emote' | 'boost' | 'board_skin' | 'win_line' | 'draw_mark';
 
 // Every card carries a rarity badge, and the icon alone never said what it
 // meant — a crown on one theme and a diamond on another read as two different
@@ -89,6 +89,8 @@ const StoreScreen: React.FC = () => {
                 return inventory.equippedBoardSkin === item.id;
             case 'win_line':
                 return inventory.equippedWinLine === item.id;
+            case 'draw_mark':
+                return inventory.equippedDrawMark === item.id;
             default:
                 return false;
         }
@@ -351,6 +353,7 @@ const StoreScreen: React.FC = () => {
                     { id: 'emote', label: 'Emotes', icon: 'happy-outline' },
                     { id: 'board_skin', label: t('tabBoard'), icon: 'grid-outline' },
                     { id: 'win_line', label: t('tabWinLine'), icon: 'remove-outline' },
+                    { id: 'draw_mark', label: t('tabDrawMark'), icon: 'hand-right-outline' },
                     { id: 'boost', label: t('boosts'), icon: 'flash-outline' },
                 ].map((tab) => (
                     <TouchableOpacity
