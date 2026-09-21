@@ -12,6 +12,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Cell, WinningLine, GameMove, GravityFallAnimation } from '../types/game';
 import GameCell from './GameCell';
 import GravityFallingPiece from './GravityFallingPiece';
+import WinLine from './WinLine';
 import {
   COLORS,
   SPACING,
@@ -168,6 +169,17 @@ const GameBoard: React.FC<GameBoardProps> = ({
             })}
           </View>
         ))}
+
+        {/* Alinhador da vitoria. As medidas vao daqui porque cada tabuleiro
+            tem a sua: este usa padding SPACING.lg e a celula do tema. */}
+        {winningLine && (
+          <WinLine
+            winningLine={winningLine}
+            cellSize={GAME_DIMENSIONS.cellSize}
+            gap={cellGap}
+            padding={SPACING.lg}
+          />
+        )}
 
         {/* Gravity Falling Piece Animation.
             key forces a REMOUNT when a different fall starts — the sprite only

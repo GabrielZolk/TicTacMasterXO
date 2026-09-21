@@ -890,6 +890,31 @@ export const BOARD_SKIN_STORE_ITEMS: StoreItem[] = BOARD_SKINS.map(skin => {
     };
 });
 
+// ==================== ALINHADORES ====================
+
+import { WIN_LINES } from './winLines';
+
+// A arte mora em winLines.ts e a loja so a embrulha, igual aos skins: o item
+// e a definicao compartilham o id, entao nao existe copia para desencontrar.
+export const WIN_LINE_STORE_ITEMS: StoreItem[] = WIN_LINES.map(line => {
+    const isDefault = line.id === 'line_default';
+    return {
+        id: line.id,
+        type: 'win_line',
+        name: line.name,
+        nameKey: `store.winlines.${line.id}.name`,
+        description: line.description,
+        descriptionKey: `store.winlines.${line.id}.description`,
+        icon: line.icon,
+        emoji: line.icon,
+        price: { stars: line.price },
+        rarity: line.rarity,
+        isOwned: isDefault,
+        isEquipped: false,
+        previewGradient: ['#101018', line.color, line.accent],
+    };
+});
+
 // ==================== TODOS OS ITENS ====================
 
 export const ALL_STORE_ITEMS: StoreItem[] = [
@@ -898,6 +923,7 @@ export const ALL_STORE_ITEMS: StoreItem[] = [
     ...EFFECT_STORE_ITEMS,
     ...EMOTE_STORE_ITEMS,
     ...BOARD_SKIN_STORE_ITEMS,
+    ...WIN_LINE_STORE_ITEMS,
 ];
 
 // ==================== HELPERS ====================

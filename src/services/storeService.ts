@@ -19,11 +19,12 @@ const INITIAL_STORE_DATA: StoreData = {
         lastUpdated: Date.now(),
     },
     inventory: {
-        ownedItems: ['theme_dark', 'theme_light', 'symbols_default', 'effect_none', 'skin_default'], // Itens gratuitos iniciais
+        ownedItems: ['theme_dark', 'theme_light', 'symbols_default', 'effect_none', 'skin_default', 'line_default'], // Itens gratuitos iniciais
         equippedTheme: 'theme_dark',
         equippedSymbols: 'symbols_default',
         equippedEffect: 'effect_none',
         equippedBoardSkin: 'skin_default',
+        equippedWinLine: 'line_default',
     },
     transactions: [],
     lastDailyReward: 0,
@@ -82,6 +83,15 @@ class StoreService {
                     }
                     if (!this.storeData.inventory.ownedItems.includes('skin_default')) {
                         this.storeData.inventory.ownedItems.push('skin_default');
+                    }
+                    // Mesma migracao para o alinhador: sem isto quem ja tem o jogo
+                    // instalado fica com `undefined` e sem o item gratuito, e o bug
+                    // passaria por todo teste feito em instalacao limpa.
+                    if (!this.storeData.inventory.equippedWinLine) {
+                        this.storeData.inventory.equippedWinLine = 'line_default';
+                    }
+                    if (!this.storeData.inventory.ownedItems.includes('line_default')) {
+                        this.storeData.inventory.ownedItems.push('line_default');
                     }
                     await this.save();
                 }
@@ -293,7 +303,7 @@ class StoreService {
         }
     }
 
-    async equipItem(itemId: string, itemType: 'theme' | 'symbol' | 'effect' | 'avatar' | 'board_skin'): Promise<boolean> {
+    async equipItem(itemId: string, itemType: 'theme' | 'symbol' | 'effect' | 'avatar' | 'board_skin' | 'win_line'): Promise<boolean> {
         try {
             if (!this.storeData) {
                 await this.initialize();
@@ -321,6 +331,16 @@ class StoreService {
                 case 'board_skin':
                     this.storeData!.inventory.equippedBoardSkin = itemId;
                     break;
+                case 'win_line':
+                    this.storeData!.inventory.equippedWinLine = itemId;
+                    break;
+                default:
+                    // A tela chama isto com `item.type as any`. Sem este ramo, um
+                    // tipo que ninguem tratou caia fora do switch e mesmo assim
+                    // salvava, avisava os ouvintes e devolvia true: a loja dizia
+                    // "equipado" e nada tinha sido equipado.
+                    console.warn('equipItem: tipo sem tratamento ->', itemType);
+                    return false;
             }
 
             await this.save();

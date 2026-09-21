@@ -4,7 +4,17 @@ import { ThemeType } from './game';
 export type CurrencyType = 'stars';
 
 // Tipos de itens da loja
-export type StoreItemType = 'theme' | 'symbol' | 'effect' | 'avatar' | 'boost' | 'bundle';
+export type StoreItemType =
+  | 'theme'
+  | 'symbol'
+  | 'effect'
+  | 'avatar'
+  | 'boost'
+  | 'bundle'
+  // Alinhador entra na uniao de verdade, e nao por `as any` como emote e
+  // board_skin fizeram: assim getItemsByType e o filtro da loja funcionam
+  // sozinhos, sem um ramo especial para cada categoria nova.
+  | 'win_line';
 
 // Raridade dos itens
 export type ItemRarity = 'common' | 'rare' | 'epic' | 'legendary';
@@ -113,6 +123,7 @@ export interface PlayerInventory {
   equippedEffect?: string;
   equippedAvatar?: string;
   equippedBoardSkin?: string;
+  equippedWinLine?: string;
 }
 
 // Interface para dados da loja

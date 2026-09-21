@@ -19,6 +19,7 @@ import {
 } from '../utils/theme';
 import { useTheme } from '../hooks/useTheme';
 import { useEquippedBoardSkin } from '../hooks/useEquippedItems';
+import WinLine from './WinLine';
 
 const { width, height } = Dimensions.get('window');
 
@@ -129,6 +130,17 @@ const BigBoard: React.FC<BigBoardProps> = ({
             ))}
           </View>
         ))}
+
+        {/* Aqui a celula NAO e a do tema: este tabuleiro calcula a dele em
+            cima da largura disponivel, e e ela que posiciona as casas. */}
+        {winningLine && (
+          <WinLine
+            winningLine={winningLine}
+            cellSize={cellSize}
+            gap={SPACING.xs}
+            padding={SPACING.md}
+          />
+        )}
       </Animated.View>
     </View>
   );

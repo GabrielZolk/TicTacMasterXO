@@ -16,9 +16,11 @@ import {
   COLORS, 
   SPACING, 
   BORDER_RADIUS,
+  GAME_DIMENSIONS,
   SHADOWS,
   createTextStyle,
 } from '../utils/theme';
+import WinLine from './WinLine';
 
 interface BlindBoardProps {
   gameState: BlindGameState;
@@ -126,6 +128,15 @@ const BlindBoard: React.FC<BlindBoardProps> = ({
             })}
           </View>
         ))}
+
+        {winningLine && (
+          <WinLine
+            winningLine={winningLine}
+            cellSize={GAME_DIMENSIONS.cellSize}
+            gap={SPACING.xs}
+            padding={SPACING.md}
+          />
+        )}
       </Animated.View>
 
       {/* Mystery Effect */}

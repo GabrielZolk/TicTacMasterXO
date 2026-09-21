@@ -3,6 +3,7 @@ import { storeService } from '../services/storeService';
 import { getItemById } from '../data/storeItems';
 import { SymbolStoreItem, EffectStoreItem } from '../types/store';
 import { BOARD_SKINS, BoardSkin } from '../types/boardSkins';
+import { WinLineDef, DEFAULT_WIN_LINE, getWinLineById } from '../data/winLines';
 
 const DEFAULT_EFFECT: EffectStoreItem['content'] = {
     animationType: 'sparkles',
@@ -145,4 +146,38 @@ export const useEquippedBoardSkin = () => {
     }, []);
 
     return skin;
+};
+
+/**
+ * Alinhador equipado. Resolve pelo id contra a tabela de winLines — mesmo
+ * caminho dos skins de tabuleiro — e reassina o storeService para que trocar
+ * de alinhador na loja repinte a partida que estiver aberta.
+ */
+export const useEquippedWinLine = (): WinLineDef => {
+    const [winLine, setWinLine] = useState<WinLineDef>(DEFAULT_WIN_LINE);
+    const mountedRef = useRef(true);
+
+    useEffect(() => {
+        mountedRef.current = true;
+
+        const loadWinLine = async () => {
+            try {
+                const inventory = await storeService.getInventory();
+                if (!mountedRef.current) return;
+                setWinLine(getWinLineById(inventory.equippedWinLine));
+            } catch (error) {
+                console.error('Error loading equipped win line:', error);
+            }
+        };
+
+        loadWinLine();
+        const unsubscribe = storeService.subscribe(loadWinLine);
+
+        return () => {
+            mountedRef.current = false;
+            unsubscribe();
+        };
+    }, []);
+
+    return winLine;
 };
