@@ -34,6 +34,17 @@ const { width } = Dimensions.get('window');
 
 type TabType = 'all' | 'theme' | 'symbol' | 'effect' | 'emote' | 'boost' | 'board_skin';
 
+// Every card carries a rarity badge, and the icon alone never said what it
+// meant — a crown on one theme and a diamond on another read as two different
+// kinds of product instead of two rungs of the same ladder.
+const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary'] as const;
+const RARITY_LABEL_KEYS = {
+    common: 'rarityCommon',
+    rare: 'rarityRare',
+    epic: 'rarityEpic',
+    legendary: 'rarityLegendary',
+} as const;
+
 const StoreScreen: React.FC = () => {
     const navigation = useNavigation();
     const { colors } = useTheme();
@@ -588,6 +599,27 @@ const StoreScreen: React.FC = () => {
                         </View>
                     )}
 
+                    {/* Legend for the badge on each card */}
+                    {filteredItems.length > 0 && (
+                        <View style={styles.rarityLegend}>
+                            {RARITY_ORDER.map(rarity => (
+                                <View key={rarity} style={styles.rarityLegendItem}>
+                                    <View
+                                        style={[
+                                            styles.rarityLegendBadge,
+                                            { backgroundColor: RARITY_COLORS[rarity] + '33', borderColor: RARITY_COLORS[rarity] },
+                                        ]}
+                                    >
+                                        <Text style={styles.rarityLegendIcon}>{RARITY_ICONS[rarity]}</Text>
+                                    </View>
+                                    <Text style={[styles.rarityLegendLabel, { color: RARITY_COLORS[rarity] }]}>
+                                        {t(RARITY_LABEL_KEYS[rarity])}
+                                    </Text>
+                                </View>
+                            ))}
+                        </View>
+                    )}
+
                     <View style={styles.itemsGrid}>
                         {filteredItems.map((item, index) => renderStoreItem(item, index))}
                     </View>
@@ -824,6 +856,40 @@ const styles = StyleSheet.create({
         padding: SPACING.md,
         flex: 1,
         justifyContent: 'space-between', // Push footer to bottom
+    },
+
+    // Rarity legend
+    rarityLegend: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: SPACING.sm,
+        backgroundColor: COLORS.darkSecondary + '80',
+        borderRadius: BORDER_RADIUS.md,
+        paddingVertical: SPACING.sm,
+        paddingHorizontal: SPACING.sm,
+        marginBottom: SPACING.md,
+    },
+    rarityLegendItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 5,
+    },
+    rarityLegendBadge: {
+        width: 22,
+        height: 22,
+        borderRadius: 11,
+        borderWidth: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    rarityLegendIcon: {
+        fontSize: 11,
+    },
+    rarityLegendLabel: {
+        fontSize: 11,
+        fontWeight: '700',
     },
 
     // Badges

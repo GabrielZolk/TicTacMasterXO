@@ -71,7 +71,7 @@ import LevelUpAnimation from '../components/LevelUpAnimation';
 import ReplayModal from '../components/ReplayModal';
 import iapService from '../services/iapService';
 import { tournamentService } from '../services/tournamentService';
-import { Emote } from '../types/emotes';
+import { Emote, EMOTE_PACKS } from '../types/emotes';
 import { EmotePayload } from '../types/online';
 import { ChestRarity } from '../types/chest';
 import { buildShareCard } from '../utils/shareCard';
@@ -163,8 +163,15 @@ const GameScreen: React.FC = () => {
     firebaseService.getConnectionStatus()
   ); // Using any to avoid importing ConnectionStatus type if not already imported or conflict
 
-  // Emote state (online only)
+  // Emote state. Online and offline alike: a pack bought in the store has to
+  // be usable in whatever match the player actually opened.
   const [receivedEmote, setReceivedEmote] = useState<Emote | null>(null);
+  const emoteHideRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const emoteReplyRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (emoteHideRef.current) clearTimeout(emoteHideRef.current);
+    if (emoteReplyRef.current) clearTimeout(emoteReplyRef.current);
+  }, []);
 
   // Chest state
   const [pendingChestRarity, setPendingChestRarity] = useState<ChestRarity | null>(null);
@@ -254,13 +261,43 @@ const GameScreen: React.FC = () => {
     }
   }, [opponent]);
 
+  const showEmote = (emote: Emote, holdMs: number = 3000) => {
+    setReceivedEmote(emote);
+    if (emoteHideRef.current) clearTimeout(emoteHideRef.current);
+    emoteHideRef.current = setTimeout(() => {
+      if (!screenMountedRef.current) return;
+      setReceivedEmote(null);
+    }, holdMs);
+  };
+
   const handleSendEmote = (emote: Emote) => {
-    if (opponent !== 'online') return;
-    firebaseService.sendMessage({
-      type: 'emote',
-      payload: { emoteId: emote.id, emoji: emote.emoji } as EmotePayload,
-    });
     triggerHaptics('light');
+
+    if (opponent === 'online') {
+      firebaseService.sendMessage({
+        type: 'emote',
+        payload: { emoteId: emote.id, emoji: emote.emoji } as EmotePayload,
+      });
+      return;
+    }
+
+    // Offline an emote had nowhere to go, so the whole bar was hidden — which
+    // left a player who bought a pack in the store with no match to use it in.
+    // Now it lands on the board like any other emote: against someone sharing
+    // the phone that IS the point, and the AI answers so it is not a monologue.
+    showEmote(emote);
+
+    if (opponent === 'ai') {
+      // Free pack only: the AI must never flash an emote the player has not
+      // even seen for sale.
+      const replies = EMOTE_PACKS[0].emotes.filter(e => e.id !== emote.id);
+      const reply = replies[Math.floor(Math.random() * replies.length)];
+      if (emoteReplyRef.current) clearTimeout(emoteReplyRef.current);
+      emoteReplyRef.current = setTimeout(() => {
+        if (!screenMountedRef.current) return;
+        showEmote(reply, 2500);
+      }, 1200);
+    }
   };
 
   // Set game mode, opponent and difficulty when screen loads
@@ -595,9 +632,10 @@ const GameScreen: React.FC = () => {
         }
       } else if (message.type === 'emote') {
         const payload = message.payload as EmotePayload;
-        setReceivedEmote({ id: payload.emoteId, emoji: payload.emoji, label: '' });
-        // Clear after animation
-        setTimeout(() => setReceivedEmote(null), 3000);
+        // Through the same helper, so the hide timer is tracked and cancelled.
+        // The bare setTimeout that used to be here still fired after the player
+        // had left the screen.
+        showEmote({ id: payload.emoteId, emoji: payload.emoji, label: '' });
       }
     };
 
@@ -1430,13 +1468,11 @@ const GameScreen: React.FC = () => {
           />
         )}
 
-        {/* Emote Bar - online only */}
-        {opponent === 'online' && (
-          <EmoteBar
-            onSendEmote={handleSendEmote}
-            receivedEmote={receivedEmote}
-          />
-        )}
+        {/* Emote Bar - every match, not just online */}
+        <EmoteBar
+          onSendEmote={handleSendEmote}
+          receivedEmote={receivedEmote}
+        />
 
         {/* Troll Message */}
         {trollMessage && (

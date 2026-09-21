@@ -32,8 +32,11 @@ import {
 type OpponentScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Opponent'>;
 type OpponentScreenRouteProp = RouteProp<RootStackParamList, 'Opponent'>;
 
+type PlayGroup = 'offline' | 'online';
+
 interface OpponentOption {
   id: OpponentType;
+  group: PlayGroup;
   title: string;
   subtitle: string;
   description: string;
@@ -52,6 +55,7 @@ const OpponentScreen: React.FC = () => {
   const opponentOptions: OpponentOption[] = [
     {
       id: 'ai',
+      group: 'offline',
       title: t('vsAI.title'),
       subtitle: t('vsAI.subtitle'),
       description: t('vsAI.description'),
@@ -61,6 +65,7 @@ const OpponentScreen: React.FC = () => {
     },
     {
       id: 'human',
+      group: 'offline',
       title: t('opponentHumanTitle'),
       subtitle: t('opponentHumanSubtitle'),
       description: t('opponentHumanDesc'),
@@ -70,6 +75,7 @@ const OpponentScreen: React.FC = () => {
     },
     {
       id: 'online',
+      group: 'online',
       title: t('opponentOnlineTitle'),
       subtitle: t('opponentOnlineSubtitle'),
       description: t('opponentOnlineDesc'),
@@ -79,6 +85,7 @@ const OpponentScreen: React.FC = () => {
     },
     {
       id: 'private' as OpponentType,
+      group: 'online',
       title: t('opponentPrivateTitle'),
       subtitle: t('opponentPrivateSubtitle'),
       description: t('opponentPrivateDesc'),
@@ -88,12 +95,38 @@ const OpponentScreen: React.FC = () => {
     },
     {
       id: 'ranked' as OpponentType,
+      group: 'online',
       title: t('ranked'),
       subtitle: t('opponentRankedSubtitle'),
       description: t('opponentRankedDesc'),
       icon: 'trophy-outline',
       color: COLORS.warning,
       emoji: '🏆',
+    },
+  ];
+
+  // Five flat cards gave no hint that three of them need a connection and two
+  // do not. Same cards, same order — just told apart by where they live.
+  const playGroups: {
+    id: PlayGroup;
+    title: string;
+    hint: string;
+    icon: keyof typeof Ionicons.glyphMap;
+    color: string;
+  }[] = [
+    {
+      id: 'offline',
+      title: t('opponentGroupOffline'),
+      hint: t('opponentGroupOfflineHint'),
+      icon: 'phone-portrait-outline',
+      color: COLORS.xColor,
+    },
+    {
+      id: 'online',
+      title: t('opponentGroupOnline'),
+      hint: t('opponentGroupOnlineHint'),
+      icon: 'wifi-outline',
+      color: COLORS.success,
     },
   ];
 
@@ -164,39 +197,64 @@ const OpponentScreen: React.FC = () => {
             <Text style={styles.subtitle}>{t('whoToPlayAgainst')}</Text>
           </Animated.View>
 
-          {/* Opponent Options */}
-          <View style={styles.optionsContainer}>
-            {opponentOptions.map((option, index) => (
+          {/* Opponent Options, split by what needs a connection */}
+          {playGroups.map((group, groupIndex) => (
+            <View key={group.id} style={styles.groupSection}>
               <Animated.View
-                key={option.id}
-                entering={FadeInUp.delay(300 + index * 100).duration(500)}
-                style={styles.optionWrapper}
+                entering={FadeInUp.delay(250 + groupIndex * 300).duration(500)}
+                style={styles.groupHeader}
               >
-                <TouchableOpacity
-                  onPress={() => handleOpponentSelect(option.id)}
-                  activeOpacity={0.8}
-                  style={[styles.optionButton, { borderColor: option.color }]}
+                <View
+                  style={[
+                    styles.groupBadge,
+                    { backgroundColor: group.color + '20', borderColor: group.color },
+                  ]}
                 >
-                  <View style={styles.optionContent}>
-                    <View style={[styles.optionIcon, { backgroundColor: option.color + '20' }]}>
-                      <Text style={styles.emoji}>{option.emoji}</Text>
-                      <Ionicons name={option.icon} size={24} color={option.color} />
-                    </View>
-
-                    <View style={styles.optionText}>
-                      <Text style={[styles.optionTitle, { color: option.color }]}>
-                        {option.title}
-                      </Text>
-                      <Text style={styles.optionSubtitle}>{option.subtitle}</Text>
-                      <Text style={styles.optionDescription}>{option.description}</Text>
-                    </View>
-
-                    <Ionicons name="chevron-forward" size={20} color={COLORS.gray} />
-                  </View>
-                </TouchableOpacity>
+                  <Ionicons name={group.icon} size={16} color={group.color} />
+                </View>
+                <View style={styles.groupHeaderText}>
+                  <Text style={[styles.groupTitle, { color: group.color }]}>{group.title}</Text>
+                  <Text style={styles.groupHint}>{group.hint}</Text>
+                </View>
+                <View style={[styles.groupRule, { backgroundColor: group.color + '33' }]} />
               </Animated.View>
-            ))}
-          </View>
+
+              <View style={styles.optionsContainer}>
+                {opponentOptions
+                  .filter(option => option.group === group.id)
+                  .map((option, index) => (
+                    <Animated.View
+                      key={option.id}
+                      entering={FadeInUp.delay(300 + groupIndex * 300 + index * 100).duration(500)}
+                      style={styles.optionWrapper}
+                    >
+                      <TouchableOpacity
+                        onPress={() => handleOpponentSelect(option.id)}
+                        activeOpacity={0.8}
+                        style={[styles.optionButton, { borderColor: option.color }]}
+                      >
+                        <View style={styles.optionContent}>
+                          <View style={[styles.optionIcon, { backgroundColor: option.color + '20' }]}>
+                            <Text style={styles.emoji}>{option.emoji}</Text>
+                            <Ionicons name={option.icon} size={24} color={option.color} />
+                          </View>
+
+                          <View style={styles.optionText}>
+                            <Text style={[styles.optionTitle, { color: option.color }]}>
+                              {option.title}
+                            </Text>
+                            <Text style={styles.optionSubtitle}>{option.subtitle}</Text>
+                            <Text style={styles.optionDescription}>{option.description}</Text>
+                          </View>
+
+                          <Ionicons name="chevron-forward" size={20} color={COLORS.gray} />
+                        </View>
+                      </TouchableOpacity>
+                    </Animated.View>
+                  ))}
+              </View>
+            </View>
+          ))}
 
           {/* Info Card */}
           <Animated.View entering={FadeInUp.delay(600).duration(600)} style={styles.infoCard}>
@@ -245,9 +303,41 @@ const styles = StyleSheet.create({
     color: COLORS.lightGray,
     textAlign: 'center',
   },
+  groupSection: {
+    marginBottom: SPACING.lg,
+  },
+  groupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+  groupBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  groupHeaderText: {
+    flexShrink: 1,
+  },
+  groupTitle: {
+    ...createTextStyle('md', 'extrabold'),
+    letterSpacing: 0.5,
+  },
+  groupHint: {
+    ...createTextStyle('xs', 'medium'),
+    color: COLORS.gray,
+  },
+  groupRule: {
+    flex: 1,
+    height: 1,
+    marginLeft: SPACING.sm,
+  },
   optionsContainer: {
     gap: SPACING.md,
-    marginBottom: SPACING.xl,
   },
   optionWrapper: {
     marginBottom: SPACING.sm,

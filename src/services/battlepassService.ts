@@ -58,7 +58,19 @@ class BattlePassService {
 
     async getProgress(): Promise<BattlePassProgress> {
         if (!this.progress) await this.initialize();
-        return this.progress!;
+        // A COPY, never the live object. `claimReward` and `addXp` mutate
+        // `this.progress` in place, so handing the same reference out meant the
+        // screen's `setProgress(p)` was given the very object it already held —
+        // and React skips the re-render when the identity matches. The claimed
+        // tier stayed drawn as unclaimed until the screen was closed and opened
+        // again, which is exactly what "precisa sair e entrar" looked like.
+        // The arrays are copied too: `claimedFreeRewards.push` would otherwise
+        // keep mutating a snapshot the caller had already taken.
+        return {
+            ...this.progress!,
+            claimedFreeRewards: [...this.progress!.claimedFreeRewards],
+            claimedPremiumRewards: [...this.progress!.claimedPremiumRewards],
+        };
     }
 
     getSeason() {
