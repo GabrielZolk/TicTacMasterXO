@@ -16,9 +16,8 @@ import { SymbolStyle } from '../hooks/useEquippedItems';
 import { GAME_DIMENSIONS } from '../utils/theme';
 
 /**
- * Varredura por cima da celula, para os dois pacotes cuja materia nao mora no
- * glifo e sim na luz que passa por ele: Matrix (a chuva verde descendo) e Ouro
- * (a folha de ouro pegando a luz de lado).
+ * Varredura por cima da celula, para o pacote cuja materia nao mora no glifo e
+ * sim na luz que passa por ele: Matrix, a chuva verde descendo.
  *
  * E uma faixa de gradiente movida por `translate` dentro de um recorte —
  * exatamente o que o tema Copa Nick ja faz em todas as celulas hoje. Transform
@@ -26,11 +25,13 @@ import { GAME_DIMENSIONS } from '../utils/theme';
  *
  * Fica FORA do envelope da peca de proposito: a varredura pertence a celula,
  * nao ao simbolo, entao ela nao gira nem escala junto quando a peca entra.
+ *
+ * O Ouro morava aqui e mudou para o AnimatedPiece, onde o reflexo e recortado
+ * na forma do glifo. Dois brilhos na mesma celula viravam ruido.
  */
 
 const CYCLE_MS: Partial<Record<SymbolStyle, number>> = {
   matrix: 1900,
-  gold: 2600,
 };
 
 export const hasSymbolSweep = (style: SymbolStyle): boolean => CYCLE_MS[style] !== undefined;
@@ -62,52 +63,21 @@ const SymbolSweep: React.FC<SymbolSweepProps> = ({ symbolStyle, borderRadius }) 
 
   const barStyle = useAnimatedStyle(() => {
     const p = t.value;
-
-    // Matrix: desce sem parar, como a chuva de caracteres.
-    if (symbolStyle === 'matrix') {
-      return {
-        opacity: interpolate(p, [0, 0.12, 0.88, 1], [0, 1, 1, 0], Extrapolation.CLAMP),
-        transform: [
-          { rotate: '0deg' },
-          { translateY: interpolate(p, [0, 1], [-size * 0.7, size * 1.1]) },
-        ],
-      };
-    }
-
-    // Ouro: um lampejo rapido e depois descanso. Brilho continuo vira ruido;
-    // o que faz parecer metal e o intervalo entre um reflexo e o proximo.
     return {
-      opacity: interpolate(p, [0, 0.05, 0.3, 0.38, 1], [0, 0.9, 0.9, 0, 0], Extrapolation.CLAMP),
-      transform: [
-        { rotate: '18deg' },
-        { translateX: interpolate(p, [0, 0.38, 1], [-size * 1.1, size * 1.1, size * 1.1]) },
-      ],
+      opacity: interpolate(p, [0, 0.12, 0.88, 1], [0, 1, 1, 0], Extrapolation.CLAMP),
+      transform: [{ translateY: interpolate(p, [0, 1], [-size * 0.7, size * 1.1]) }],
     };
-  }, [symbolStyle, size]);
+  }, [size]);
 
   if (!duration) return null;
 
-  const isMatrix = symbolStyle === 'matrix';
-
   return (
     <View style={[styles.clip, { borderRadius }]} pointerEvents="none">
-      <Animated.View
-        style={[
-          isMatrix ? styles.barHorizontal : styles.barDiagonal,
-          isMatrix
-            ? { height: size * 0.45, width: size }
-            : { width: size * 0.34, height: size * 2 },
-          barStyle,
-        ]}
-      >
+      <Animated.View style={[styles.bar, { width: size, height: size * 0.45 }, barStyle]}>
         <LinearGradient
-          colors={
-            isMatrix
-              ? ['rgba(0,255,65,0)', 'rgba(0,255,65,0.45)', 'rgba(0,255,65,0)']
-              : ['rgba(255,255,255,0)', 'rgba(255,246,201,0.55)', 'rgba(255,255,255,0)']
-          }
-          start={isMatrix ? { x: 0.5, y: 0 } : { x: 0, y: 0.5 }}
-          end={isMatrix ? { x: 0.5, y: 1 } : { x: 1, y: 0.5 }}
+          colors={['rgba(0,255,65,0)', 'rgba(0,255,65,0.45)', 'rgba(0,255,65,0)']}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
       </Animated.View>
@@ -120,15 +90,10 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     overflow: 'hidden',
   },
-  barHorizontal: {
+  bar: {
     position: 'absolute',
     left: 0,
     top: 0,
-  },
-  barDiagonal: {
-    position: 'absolute',
-    left: 0,
-    top: '-50%',
   },
 });
 

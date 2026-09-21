@@ -172,8 +172,12 @@ const GameCell: React.FC<GameCellProps> = ({
       [cellBgBase, cellBgHighlight]
     );
 
+    // O brilho da casa vencedora tambem entra pela borda. So `shadowOpacity` e
+    // `shadowRadius` deixavam ele INVISIVEL no Android: as duas sao iOS-only, e
+    // `elevation` desenha sombra cinza, nunca um halo dourado. O jogo roda em
+    // Android.
     const borderColor = interpolateColor(
-      borderAnimation.value,
+      Math.max(borderAnimation.value, glowAnimation.value),
       [0, 1],
       [cellBorderBase, COLORS.gold]
     );
@@ -294,6 +298,15 @@ const GameCell: React.FC<GameCellProps> = ({
             color={getStyledPieceColor(value)}
             symbolStyle={symbolStyle}
             isWinning={isWinning}
+            fontSize={
+              // Gobble mode: the glyph scales with the piece size so players can
+              // see at a glance what can still be swallowed. It travels as a
+              // number because the gold mask has to be sized explicitly — a
+              // MaskedView cannot measure itself from its child.
+              pieceSize
+                ? GAME_DIMENSIONS.pieceSize * (0.45 + pieceSize * 0.17)
+                : GAME_DIMENSIONS.pieceSize * 0.9
+            }
             textStyle={[
               styles.piece,
               {
@@ -302,9 +315,6 @@ const GameCell: React.FC<GameCellProps> = ({
                 fontWeight: symbolStyle === 'gold' ? '900' : 'bold',
                 letterSpacing: symbolStyle === 'matrix' ? 2 : 0,
               },
-              // Gobble mode: the glyph scales with the piece size so players can
-              // see at a glance what can still be swallowed.
-              pieceSize ? { fontSize: GAME_DIMENSIONS.pieceSize * (0.45 + pieceSize * 0.17) } : null,
             ]}
           />
         </Animated.View>

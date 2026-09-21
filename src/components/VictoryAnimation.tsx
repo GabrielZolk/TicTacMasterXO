@@ -205,34 +205,83 @@ const ParticleComponent: React.FC<{
   particle: Particle;
   animationProgress: SharedValue<number>;
 }> = ({ particle, animationProgress }) => {
+  // `top` e prop de LAYOUT. A Reanimated aplica prop animada clonando e
+  // commitando a shadow tree, entao animar `top` dispara um passo de layout da
+  // tela inteira a cada quadro — vezes 35 elementos, em TODA vitoria.
+  // `translateY` faz o mesmo caminho e nao custa layout nenhum.
+  // O que nao muda (tamanho, cor, raio) tambem saiu do worklet: devolver valor
+  // estatico 60 vezes por segundo so gera trabalho de diffing.
   const animatedStyle = useAnimatedStyle(() => {
     const progress = animationProgress.value;
-    
+
     return {
-      position: 'absolute',
-      left: particle.x,
-      top: interpolate(
-        progress,
-        [0, 1],
-        [particle.y, particle.y - height * 1.5]
-      ),
-      width: particle.size,
-      height: particle.size,
-      backgroundColor: particle.color,
-      borderRadius: particle.size / 2,
       opacity: interpolate(progress, [0, 0.3, 0.7, 1], [0, 1, 1, 0]),
       transform: [
-        {
-          scale: interpolate(progress, [0, 0.5, 1], [0, 1, 0.5])
-        },
-        {
-          rotate: `${interpolate(progress, [0, 1], [0, 720])}deg`
-        }
+        { translateY: interpolate(progress, [0, 1], [0, -height * 1.5]) },
+        { scale: interpolate(progress, [0, 0.5, 1], [0, 1, 0.5]) },
+        { rotate: `${interpolate(progress, [0, 1], [0, 720])}deg` },
       ],
     };
   });
 
-  return <Animated.View style={animatedStyle} />;
+  return (
+    <Animated.View
+      style={[
+        styles.floater,
+        {
+          left: particle.x,
+          top: particle.y,
+          width: particle.size,
+          height: particle.size,
+          backgroundColor: particle.color,
+          borderRadius: particle.size / 2,
+        },
+        animatedStyle,
+      ]}
+    />
+  );
+};
+
+interface ConfettiSpec {
+  id: number;
+  x: number;
+  startY: number;
+  travel: number;
+  rotation: number;
+  color: string;
+  delay: number;
+}
+
+// Um papel picado. Componente de verdade, e nao um `useAnimatedStyle` dentro de
+// `.map()`: aquilo e quebra da regra dos hooks que so nao estoura enquanto a
+// contagem de itens nunca muda.
+const ConfettiPiece: React.FC<{
+  piece: ConfettiSpec;
+  animationProgress: SharedValue<number>;
+}> = ({ piece, animationProgress }) => {
+  const animatedStyle = useAnimatedStyle(() => {
+    const progress = animationProgress.value;
+    const delayed = Math.max(0, progress - piece.delay / 2000);
+
+    return {
+      opacity: interpolate(delayed, [0, 0.2, 0.8, 1], [0, 1, 1, 0]),
+      transform: [
+        { translateY: interpolate(delayed, [0, 1], [0, piece.travel]) },
+        { rotate: `${interpolate(delayed, [0, 1], [0, piece.rotation + 720])}deg` },
+        { scale: interpolate(delayed, [0, 0.3, 0.7, 1], [0, 1, 1, 0.3]) },
+      ],
+    };
+  });
+
+  return (
+    <Animated.View
+      style={[
+        styles.confetti,
+        { left: piece.x, top: piece.startY, backgroundColor: piece.color },
+        animatedStyle,
+      ]}
+    />
+  );
 };
 
 // Confetti overlay component
@@ -241,53 +290,28 @@ const ConfettiOverlay: React.FC<{
   winner: Player;
   colors?: string[];
 }> = ({ animationProgress, winner, colors }) => {
-  const confettiPieces = [];
-  const confettiCount = 15;
+  // Sorteado UMA vez. Como isto morava no corpo do componente, qualquer
+  // re-render teletransportava os papeis para posicoes novas no meio da queda.
+  const confettiPieces = React.useMemo<ConfettiSpec[]>(() => {
+    const defaultColors = [getPlayerColor(winner), COLORS.gold, COLORS.yellow];
+    const effectColors = colors && colors.length > 0 ? colors : defaultColors;
 
-  // Use custom colors if provided, otherwise use defaults
-  const defaultColors = [getPlayerColor(winner), COLORS.gold, COLORS.yellow];
-  const effectColors = colors && colors.length > 0 ? colors : defaultColors;
-
-  for (let i = 0; i < confettiCount; i++) {
-    confettiPieces.push({
+    return Array.from({ length: 15 }, (_, i) => ({
       id: i,
       x: Math.random() * width,
       startY: -50,
-      endY: height + 100,
+      travel: height + 150,
       rotation: Math.random() * 360,
       color: effectColors[i % effectColors.length],
       delay: Math.random() * 500,
-    });
-  }
+    }));
+  }, [winner, colors]);
 
   return (
     <>
-      {confettiPieces.map((piece, index) => {
-        const confettiStyle = useAnimatedStyle(() => {
-          const progress = animationProgress.value;
-          const delayedProgress = Math.max(0, progress - (piece.delay / 2000));
-          
-          return {
-            position: 'absolute',
-            left: piece.x,
-            top: interpolate(delayedProgress, [0, 1], [piece.startY, piece.endY]),
-            width: 8,
-            height: 8,
-            backgroundColor: piece.color,
-            opacity: interpolate(delayedProgress, [0, 0.2, 0.8, 1], [0, 1, 1, 0]),
-            transform: [
-              {
-                rotate: `${interpolate(delayedProgress, [0, 1], [0, piece.rotation + 720])}deg`
-              },
-              {
-                scale: interpolate(delayedProgress, [0, 0.3, 0.7, 1], [0, 1, 1, 0.3])
-              }
-            ],
-          };
-        });
-
-        return <Animated.View key={piece.id} style={confettiStyle} />;
-      })}
+      {confettiPieces.map(piece => (
+        <ConfettiPiece key={piece.id} piece={piece} animationProgress={animationProgress} />
+      ))}
     </>
   );
 };
@@ -325,6 +349,31 @@ export const FireworksAnimation: React.FC<{
 };
 
 // Individual explosion effect
+// Uma faisca da explosao. Extraida do `.map()` pelo mesmo motivo do confete —
+// e `left`/`top` viraram translate: posicao por layout custava um passo de
+// layout por quadro, vezes 8 faiscas por explosao, vezes 5 explosoes.
+const Sparkle: React.FC<{
+  sparkle: { angle: number; distance: number; color: string };
+  explosionProgress: SharedValue<number>;
+}> = ({ sparkle, explosionProgress }) => {
+  const animatedStyle = useAnimatedStyle(() => {
+    const progress = explosionProgress.value;
+    const radians = (sparkle.angle * Math.PI) / 180;
+    const distance = interpolate(progress, [0, 1], [0, sparkle.distance]);
+
+    return {
+      opacity: interpolate(progress, [0, 0.3, 1], [0, 1, 0]),
+      transform: [
+        { translateX: Math.cos(radians) * distance },
+        { translateY: Math.sin(radians) * distance },
+        { scale: interpolate(progress, [0, 0.5, 1], [0, 1, 0]) },
+      ],
+    };
+  });
+
+  return <Animated.View style={[styles.sparkle, { backgroundColor: sparkle.color }, animatedStyle]} />;
+};
+
 const ExplosionEffect: React.FC<{
   x: number;
   y: number;
@@ -360,31 +409,9 @@ const ExplosionEffect: React.FC<{
 
   return (
     <View style={[styles.explosion, { left: x, top: y }]}>
-      {sparkles.map((sparkle) => {
-        const sparkleStyle = useAnimatedStyle(() => {
-          const progress = explosionProgress.value;
-          const radians = (sparkle.angle * Math.PI) / 180;
-          const currentDistance = interpolate(progress, [0, 1], [0, sparkle.distance]);
-
-          return {
-            position: 'absolute',
-            left: Math.cos(radians) * currentDistance - 4,
-            top: Math.sin(radians) * currentDistance - 4,
-            width: 8,
-            height: 8,
-            borderRadius: 4,
-            backgroundColor: sparkle.color,
-            opacity: interpolate(progress, [0, 0.3, 1], [0, 1, 0]),
-            transform: [
-              {
-                scale: interpolate(progress, [0, 0.5, 1], [0, 1, 0])
-              }
-            ],
-          };
-        });
-
-        return <Animated.View key={sparkle.id} style={sparkleStyle} />;
-      })}
+      {sparkles.map(sparkle => (
+        <Sparkle key={sparkle.id} sparkle={sparkle} explosionProgress={explosionProgress} />
+      ))}
     </View>
   );
 };
@@ -394,6 +421,22 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     zIndex: 1000,
     elevation: 1000,
+  },
+  floater: {
+    position: 'absolute',
+  },
+  confetti: {
+    position: 'absolute',
+    width: 8,
+    height: 8,
+  },
+  sparkle: {
+    position: 'absolute',
+    left: -4,
+    top: -4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   star: {
     position: 'absolute',

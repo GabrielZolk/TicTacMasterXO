@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { StyleSheet, View, TextStyle, StyleProp } from 'react-native';
+import { StyleSheet, View, Text, TextStyle, StyleProp } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -11,6 +11,8 @@ import Animated, {
   Easing,
   Extrapolation,
 } from 'react-native-reanimated';
+import MaskedView from '@react-native-masked-view/masked-view';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { SymbolStyle } from '../hooks/useEquippedItems';
 
@@ -41,10 +43,14 @@ const CYCLE_MS: Partial<Record<SymbolStyle, number>> = {
   ice: 2400,
   neon: 3200,
   matrix: 1900,
+  gold: 2600,
 };
 
 /** Tom quente para onde a chama sobe no pico do ciclo. */
 const FIRE_ACCENT = '#FFC24A';
+
+/** O corpo do metal: claro em cima, escuro embaixo. O reflexo passa por cima. */
+const GOLD_BODY = ['#FFE082', '#FFC107', '#A9741C'] as const;
 
 export const hasPieceMotion = (style: SymbolStyle): boolean => CYCLE_MS[style] !== undefined;
 
@@ -54,6 +60,8 @@ interface AnimatedPieceProps {
   color: string;
   symbolStyle: SymbolStyle;
   textStyle: StyleProp<TextStyle>;
+  /** Corpo do glifo em dp. Tambem dimensiona a mascara do Ouro. */
+  fontSize: number;
   /** A vitoria pinta tudo de dourado; a cor nao pode ficar oscilando por cima. */
   isWinning: boolean;
 }
@@ -63,10 +71,15 @@ const AnimatedPiece: React.FC<AnimatedPieceProps> = ({
   color,
   symbolStyle,
   textStyle,
+  fontSize,
   isWinning,
 }) => {
   const t = useSharedValue(0);
   const duration = CYCLE_MS[symbolStyle];
+
+  // Caixa que contem o glifo. A mascara precisa de tamanho explicito — ela nao
+  // pode se medir pelo filho — entao ele vem do corpo da fonte.
+  const box = fontSize * 1.3;
 
   useEffect(() => {
     if (!duration) {
@@ -157,6 +170,10 @@ const AnimatedPiece: React.FC<AnimatedPieceProps> = ({
         transform: [{ scale: 1 }],
       };
     }
+    if (symbolStyle === 'gold') {
+      // A mascara come o textShadow do Ouro; este halo devolve o calor.
+      return { opacity: 0.18, transform: [{ scale: 1 }] };
+    }
     return { opacity: 0, transform: [{ scale: 1 }] };
   }, [symbolStyle]);
 
@@ -182,11 +199,33 @@ const AnimatedPiece: React.FC<AnimatedPieceProps> = ({
     };
   }, [symbolStyle]);
 
-  const auraColor = symbolStyle === 'fire' ? '#FF6A00' : '#FF00FF';
+  // Reflexo do Ouro: um lampejo rapido e depois descanso. Brilho continuo vira
+  // ruido; o que faz parecer metal e o intervalo entre um reflexo e o proximo.
+  const shineStyle = useAnimatedStyle(() => {
+    if (symbolStyle !== 'gold') {
+      return { opacity: 0, transform: [{ translateX: 0 }, { rotate: '0deg' }] };
+    }
+    const p = t.value;
+    return {
+      opacity: interpolate(p, [0, 0.05, 0.28, 0.36, 1], [0, 0.95, 0.95, 0, 0], Extrapolation.CLAMP),
+      transform: [
+        { translateX: interpolate(p, [0, 0.36, 1], [-box, box, box], Extrapolation.CLAMP) },
+        { rotate: '16deg' },
+      ],
+    };
+  }, [symbolStyle, box]);
+
+  const auraColor = symbolStyle === 'fire' ? '#FF6A00' : symbolStyle === 'gold' ? '#FFB300' : '#FF00FF';
+  const showAura = symbolStyle === 'fire' || symbolStyle === 'neon' || symbolStyle === 'gold';
+
+  // Ouro recorta o brilho NA FORMA do glifo. So vale a pena fora da vitoria:
+  // quando a peca esta vencendo ela ja e dourada por cima de tudo, e a mascara
+  // engoliria justamente essa leitura.
+  const masked = symbolStyle === 'gold' && !isWinning;
 
   return (
     <View style={styles.wrap}>
-      {(symbolStyle === 'fire' || symbolStyle === 'neon') && (
+      {showAura && (
         <Animated.View
           pointerEvents="none"
           style={[styles.aura, { backgroundColor: auraColor }, auraStyle]}
@@ -204,7 +243,37 @@ const AnimatedPiece: React.FC<AnimatedPieceProps> = ({
         </>
       )}
 
-      <Animated.Text style={[textStyle, { color }, motionStyle]}>{symbol}</Animated.Text>
+      {masked ? (
+        <MaskedView
+          style={{ width: box, height: box }}
+          maskElement={
+            <View style={styles.maskHost}>
+              <Text style={[textStyle, { fontSize, color: '#000', textShadowRadius: 0 }]}>
+                {symbol}
+              </Text>
+            </View>
+          }
+        >
+          <LinearGradient
+            colors={GOLD_BODY}
+            start={{ x: 0.2, y: 0 }}
+            end={{ x: 0.8, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <Animated.View
+            style={[styles.shine, { width: box * 0.4, height: box * 2, top: -box * 0.5 }, shineStyle]}
+          >
+            <LinearGradient
+              colors={['rgba(255,255,255,0)', 'rgba(255,251,232,0.95)', 'rgba(255,255,255,0)']}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={StyleSheet.absoluteFill}
+            />
+          </Animated.View>
+        </MaskedView>
+      ) : (
+        <Animated.Text style={[textStyle, { fontSize, color }, motionStyle]}>{symbol}</Animated.Text>
+      )}
     </View>
   );
 };
@@ -234,6 +303,16 @@ const styles = StyleSheet.create({
   frostB: {
     bottom: -10,
     right: -12,
+  },
+  maskHost: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  shine: {
+    position: 'absolute',
+    left: 0,
   },
 });
 
