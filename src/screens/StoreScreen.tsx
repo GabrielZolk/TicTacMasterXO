@@ -29,6 +29,7 @@ import { StoreItem, StoreItemType, PlayerWallet, PlayerInventory, ThemeStoreItem
 import { COLORS, SPACING, BORDER_RADIUS, SHADOWS, createTextStyle } from '../utils/theme';
 import { RARITY_COLORS, RARITY_ICONS } from '../types/store';
 import ThemePreview from '../components/ThemePreview';
+import MarkPreview from '../components/MarkPreview';
 
 const { width } = Dimensions.get('window');
 
@@ -422,8 +423,13 @@ const StoreScreen: React.FC = () => {
                     disabled={equipped || isProcessing || (owned && (item.type as string) === 'emote')}
                     activeOpacity={0.8}
                 >
-                    {/* Preview — mini board for themes, gradient for others */}
-                    {item.previewGradient && item.type === 'theme' ? (
+                    {/* Preview — mini board for themes, the real mark for
+                        alinhador e velha, gradient for everything else */}
+                    {(item.type as string) === 'win_line' || (item.type as string) === 'draw_mark' ? (
+                        <View style={styles.itemPreview}>
+                            <MarkPreview kind={item.type as any} id={item.id} size={84} />
+                        </View>
+                    ) : item.previewGradient && item.type === 'theme' ? (
                         <View style={styles.itemPreview}>
                             <ThemePreview
                                 gradient={item.previewGradient}

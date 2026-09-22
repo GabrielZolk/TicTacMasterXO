@@ -2,7 +2,7 @@
   "expo": {
     "name": "TicTacMasterXO",
     "slug": "TicTacMasterXO",
-    "version": "2.6.2",
+    "version": "2.7.0",
     "orientation": "portrait",
     "icon": "./assets/tttmxo.png",
     "userInterfaceStyle": "light",
@@ -37,7 +37,7 @@
         "backgroundColor": "#0A0A0A"
       },
       "package": "com.zolk.TicTacMasterXO",
-      "versionCode": 34,
+      "versionCode": 35,
       "permissions": [
         "com.google.android.gms.permission.AD_ID",
         "android.permission.INTERNET",
